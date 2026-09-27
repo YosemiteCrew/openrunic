@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { IDLE, appendDictation, dictationReducer } from '@/components/assistant';
-import type { DictationAction, DictationState } from '@/components/assistant';
+import { IDLE, appendDictation, dictationReducer } from '../index.js';
+import type { DictationAction, DictationState } from '../index.js';
 
 /**
  * The rules about an open microphone, without a microphone.

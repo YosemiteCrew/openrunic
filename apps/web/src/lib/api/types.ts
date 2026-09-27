@@ -152,6 +152,15 @@ export interface PaginationQuery {
 
 /** Mirrors `patientListQuerySchema`. The API rejects unknown keys with a 400. */
 export interface PatientListQuery extends PaginationQuery {
+  /**
+   * A named set of logical ids, at most one page of them.
+   *
+   * What a worklist sends to name its rows. Serialised comma-separated by
+   * {@link toSearchParams}; the route splits it back and refuses an empty
+   * value, a trailing comma or one malformed id rather than answering with a
+   * shorter set.
+   */
+  ids?: readonly string[];
   /** Free text over family, given, preferred name and MRN. */
   q?: string;
   mrn?: string;
@@ -567,6 +576,79 @@ export interface DiagnosticReportDto {
   updatedAt: string;
 }
 
+/** Mirrors `diagnosticReportListQuerySchema`. Wider than `ResultListQuery`, which is a view. */
+export interface DiagnosticReportListQuery extends PaginationQuery {
+  /**
+   * A named set of logical ids, at most one page of them.
+   *
+   * What the sign-off queue sends once it has asked `/bff/v0/tasks` whose work
+   * each result is: assignment is a `Task` fact and the report route serves no
+   * filter for it (#535). Serialised comma-separated by {@link toSearchParams},
+   * and refused rather than shortened, like the `ids` filter on
+   * {@link PatientListQuery}.
+   */
+  ids?: readonly string[];
+  patientId?: string;
+  encounterId?: string;
+  serviceRequestId?: string;
+  status?: DiagnosticReportStatus;
+  category?: ServiceRequestCategory;
+  abnormalFlag?: AbnormalFlag;
+  /** `false` is the sign-off queue: reports nobody has acted on yet. */
+  reviewed?: boolean;
+  /** Inclusive ISO instant, over `issuedAt`. */
+  from?: string;
+  /** Exclusive ISO instant, over `issuedAt`. */
+  to?: string;
+  sort?: 'issuedAt' | 'effectiveAt' | 'createdAt';
+  order?: 'asc' | 'desc';
+}
+
+/** Mirrors `OBSERVATION_STATUSES`. */
+export type ObservationStatus =
+  | 'REGISTERED'
+  | 'PRELIMINARY'
+  | 'FINAL'
+  | 'AMENDED'
+  | 'CORRECTED'
+  | 'CANCELLED'
+  | 'ENTERED_IN_ERROR';
+
+/** Mirrors `resultObservationDtoSchema`: one analyte of one report. */
+export interface ResultObservationDto {
+  id: string;
+  diagnosticReportId: string;
+  patientId: string;
+  status: ObservationStatus;
+  sequence: number;
+  loincCode: string | null;
+  code: string;
+  codeSystem: string;
+  display: string;
+  valueNumber: number | null;
+  valueText: string | null;
+  valueCode: string | null;
+  unit: string | null;
+  referenceLow: number | null;
+  referenceHigh: number | null;
+  referenceRangeText: string | null;
+  interpretationCode: string | null;
+  abnormalFlag: AbnormalFlag;
+  effectiveAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Mirrors `resultObservationListQuerySchema`. No filters: the analytes of one
+ * report are the only way this collection is read, and `sequence` is the order
+ * the laboratory reported them in.
+ */
+export interface ResultObservationListQuery extends PaginationQuery {
+  sort?: 'sequence' | 'effectiveAt' | 'createdAt';
+  order?: 'asc' | 'desc';
+}
+
 /** Mirrors `TASK_STATUSES`. */
 export type TaskWorkStatus = 'OPEN' | 'IN_PROGRESS' | 'ON_HOLD' | 'DONE' | 'CANCELLED' | 'EXPIRED';
 
@@ -606,6 +688,29 @@ export interface TaskDto {
   outcome: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Mirrors `taskListQuerySchema`. Wider than `InboxListQuery`, which is a view. */
+export interface TaskListQuery extends PaginationQuery {
+  type?: TaskKind;
+  status?: TaskWorkStatus;
+  priority?: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+  patientId?: string;
+  assigneeUserId?: string;
+  assigneeTeamKey?: string;
+  /** Person or pool, without naming which person or which pool. */
+  assigneeType?: 'USER' | 'TEAM';
+  /** A user id: their own tasks and the unclaimed pool, as one page. */
+  inboxFor?: string;
+  /** `true` is the work still in flight: open, in progress or on hold. */
+  open?: boolean;
+  slaState?: 'OK' | 'AGING' | 'BREACH';
+  /** Inclusive ISO instant, over `dueAt`. */
+  from?: string;
+  /** Exclusive ISO instant, over `dueAt`. */
+  to?: string;
+  sort?: 'dueAt' | 'priority' | 'createdAt';
+  order?: 'asc' | 'desc';
 }
 
 /** Mirrors `taskCompleteSchema`. */
@@ -946,6 +1051,15 @@ export interface PrincipalCapabilities {
   readonly roles: readonly string[];
   /** Sorted, so two answers that mean the same thing compare equal. */
   readonly permissions: readonly string[];
+  /**
+   * The caller's own `User` id, or null when the caller is not staff.
+   *
+   * The one thing the browser cannot work out for itself: it holds a bearer
+   * token, and nothing in the token is the API's identifier for the person
+   * holding it. A surface defined in terms of the caller - a personal inbox,
+   * "assigned to me" - has to ask.
+   */
+  readonly userId: string | null;
 }
 
 export interface ApiClient {
@@ -1028,9 +1142,20 @@ export interface ApiClient {
     cancel: (id: string, signal?: AbortSignal) => Promise<ServiceRequestDto>;
   };
   results: {
+    list: (
+      query?: DiagnosticReportListQuery,
+      signal?: AbortSignal
+    ) => Promise<ListResponse<DiagnosticReportDto>>;
+    /** The analytes of one report. Fetched per report, never per row of a list. */
+    listObservations: (
+      id: string,
+      query?: ResultObservationListQuery,
+      signal?: AbortSignal
+    ) => Promise<ListResponse<ResultObservationDto>>;
     review: (id: string, signal?: AbortSignal) => Promise<DiagnosticReportDto>;
   };
   tasks: {
+    list: (query?: TaskListQuery, signal?: AbortSignal) => Promise<ListResponse<TaskDto>>;
     complete: (id: string, body?: TaskCompleteBody, signal?: AbortSignal) => Promise<TaskDto>;
   };
   claims: {

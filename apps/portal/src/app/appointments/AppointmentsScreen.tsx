@@ -14,6 +14,7 @@
 import { useCallback, useState } from 'react';
 import { Badge, Button, Card, EmptyState, Input, Modal } from '@openrunic/ui';
 import { AsyncBoundary } from '@/components/AsyncBoundary';
+import { AssistantHelp } from '@/components/assistant/AssistantHelp';
 import { PageHeader } from '@/components/PageHeader';
 import { AppointmentFacts } from '@/components/appointments/AppointmentFacts';
 import { getPortalApi } from '@/lib/api';
@@ -73,6 +74,8 @@ export function AppointmentsScreen({ api = getPortalApi() }: Readonly<Appointmen
         title={t('portal.appointments.title')}
         lede={t('portal.appointments.lede')}
       />
+
+      <AssistantHelp topic="visits" />
 
       {requestsSupported ? (
         <div className="portal-actions">

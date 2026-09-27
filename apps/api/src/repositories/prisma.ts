@@ -10,6 +10,7 @@ import {
   type ChildPatch,
   type Collection,
   type CollectionSpec,
+  type CompartmentRule,
   type Page,
   type RowContext,
 } from './collection.js';
@@ -210,14 +211,7 @@ export function createPrismaCollection<
             // ANDed rather than merged, so a filter the caller supplied on the
             // same column cannot widen the compartment: the outer AND still has
             // to hold.
-            AND: [
-              where ?? {},
-              {
-                [spec.model === 'Patient' ? 'id' : spec.compartment.column]: {
-                  equals: compartment,
-                },
-              },
-            ],
+            AND: [where ?? {}, compartmentClause(spec.model, spec.compartment, compartment)],
           };
     // Same reasoning again one level out: the facility narrowing is ANDed on
     // top, so nothing a caller sends can widen it either.
@@ -252,12 +246,18 @@ export function createPrismaCollection<
       const now = new Date();
       const context: RowContext = { tenantId: scope.tenantId, now, nextId: uuidv7 };
       const columns = spec.newRow(input, context);
-      if (
-        compartment !== undefined &&
-        typeof spec.compartment === 'object' &&
-        (columns as Record<string, unknown>)[spec.compartment.column] !== compartment
-      ) {
-        throw ApiError.notFound('No such patient.');
+      if (compartment !== undefined && typeof spec.compartment === 'object') {
+        const rule = spec.compartment;
+        const owned =
+          'through' in rule
+            ? (await tx.model(rule.through.model).findFirst({
+                where: {
+                  id: (columns as Record<string, unknown>)[rule.through.key],
+                  [rule.through.column]: { equals: compartment },
+                },
+              } as FindFirstArgs<PrismaModelName>)) !== null
+            : (columns as Record<string, unknown>)[rule.column] === compartment;
+        if (!owned) throw ApiError.notFound('No such patient.');
       }
 
       if (unique !== undefined) {
@@ -450,6 +450,22 @@ async function patchChild(tx: DbTransaction, patch: ChildPatch): Promise<void> {
  */
 function omitNulls(columns: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(columns).filter(([, value]) => value !== null));
+}
+
+/**
+ * The filter that confines a model to one chart. A `through` rule follows the
+ * relation to the parent and filters on the parent's patient column, which is
+ * what the memory port's `inScope` does by looking the parent up.
+ */
+function compartmentClause<M extends PrismaModelName>(
+  model: M,
+  rule: Exclude<CompartmentRule<M>, 'open' | 'closed'>,
+  patientId: string
+): Record<string, unknown> {
+  if ('through' in rule) {
+    return { [rule.through.relation]: { is: { [rule.through.column]: { equals: patientId } } } };
+  }
+  return { [model === 'Patient' ? 'id' : rule.column]: { equals: patientId } };
 }
 
 function readColumn(row: Record<string, unknown>, column: string | undefined): string | undefined {

@@ -143,9 +143,19 @@ describe('Assistant route', () => {
     expect(metadata.description).toEqual(expect.any(String));
   });
 
-  it('renders nothing at all outside a configured deployment', () => {
-    const { container } = render(<AssistantPage />);
+  it('renders nothing at all outside a configured deployment', async () => {
+    const { container } = render(await AssistantPage({ searchParams: Promise.resolve({}) }));
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('hands the screen the topic the reader came from, and nothing it does not know', async () => {
+    const page = (about: string | string[] | undefined) =>
+      AssistantPage({ searchParams: Promise.resolve({ about }) });
+
+    expect((await page('bills')).props.about).toBe('bills');
+    expect((await page(['visits', 'bills'])).props.about).toBe('visits');
+    expect((await page('record')).props.about).toBeNull();
+    expect((await page(undefined)).props.about).toBeNull();
   });
 });
 

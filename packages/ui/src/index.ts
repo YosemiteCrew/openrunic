@@ -1,7 +1,7 @@
 import './styles/index.css';
 
 /* Components. Alphabetical by component name, value export then type export, one per
-   line - parallel agents then never touch the same line. Append yours in place. */
+   line - parallel changes then never touch the same line. Append yours in place. */
 export { Alert } from './components/Alert';
 export type { AlertProps } from './components/Alert';
 export type { AlertTone } from './components/Alert';

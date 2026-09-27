@@ -57,7 +57,10 @@ describe('probeAssistant', () => {
 
     const result = await probeAssistant(configWith(fetchImpl as unknown as typeof fetch));
 
-    expect(result).toEqual({ status: 'enabled', capabilities: CAPABILITIES });
+    expect(result).toEqual({
+      status: 'enabled',
+      capabilities: { ...CAPABILITIES, dictation: null },
+    });
     const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://api.test/bff/v0/agent/tools');
     expect(new Headers(init.headers).get('authorization')).toBe('Bearer token-1');

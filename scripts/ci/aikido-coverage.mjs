@@ -1,23 +1,18 @@
 #!/usr/bin/env node
 // Aikido has to have actually reviewed this pull request.
 //
-// `Aikido Security: Deep Review` reported `skipped` on every pull request for
-// an unmeasured number of weeks with the summary "Aikido skipped this review
-// because there are no credits left in the wallet." Nothing said so. #408 is
-// the report; this is the half of it that lives in the repository.
-//
-// The problem is not that the wallet emptied - that is an owner action and no
-// file here configures it. The problem is that emptying it produced `skipped`,
-// and `skipped` is neither a failure nor a success: no red row, no
-// notification, no entry in any list a reviewer reads. A security review was
-// off and the pull request page rendered exactly what it renders when the
-// review passes. `GUIDES/A_CHECK_THAT_DID_NOT_RUN_IS_NOT_A_CHECK_THAT_PASSED`
-// collects six of these; this is the one that ran for weeks.
+// The Aikido contexts are posted by a GitHub App, so nothing in this repository
+// decides whether they run. A review that declines reports `skipped`, and
+// `skipped` is neither a failure nor a success: no red row, no notification, no
+// entry in any list a reviewer reads, and the pull request page renders exactly
+// what it renders when the review passes. #408 is the report; this is the half
+// of it that lives in the repository.
 //
 // So: read the checks Aikido posted on this head, and fail when one of them
 // declined to run. The conclusion alone cannot say that - `skipped` is the same
-// word for a wallet, a path filter and a draft - so the check's own
-// `output.summary` is printed, which is the sentence that names the cause.
+// word for several causes, a path filter and a draft among them - so the
+// check's own `output.summary` is printed, which is the sentence that names the
+// cause.
 //
 // ## What counts as declining
 //
@@ -57,11 +52,21 @@
 // allowed to skip itself. Not running is checkable; `github.event.pull_request.draft`
 // is the fact, and a draft cannot merge anyway.
 //
+// ## The checks this repository's plan includes
+//
+// PLAN_FILE lists them. When it exists, each listed check has to be posted and
+// reach a verdict, and an Aikido check that is NOT listed and reports `skipped`
+// is printed as a notice rather than failing the job - see isOutsidePlan. When
+// it does not exist, every Aikido check has to run, which is the behaviour this
+// file had before the plan file did. A file that cannot be read as a plan fails
+// the job: see parsePlan.
+//
 // Usage:
 //   GITHUB_TOKEN=... node scripts/ci/aikido-coverage.mjs <owner/repo> <sha>
 //
-// Exit 0 when every Aikido check ran, 1 when one declined or none appeared,
-// 2 on a usage error.
+// Exit 0 when every required Aikido check ran, 1 when one declined, none
+// appeared, a listed one is missing or the plan file is malformed, 2 on a usage
+// error.
 //
 // ## Why a pass is confirmed and a decline is not
 //
@@ -71,11 +76,96 @@
 // over the same set of contexts; a decline does not, because nothing arriving
 // later makes a declined check into a run one.
 
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
 /** The GitHub App that posts both Aikido contexts. Read off the check runs. */
 export const AIKIDO_APP = 'aikido-pr-checks';
+
+/** Where the plan is declared, relative to the repository root. */
+export const PLAN_FILE = '.github/aikido-plan.json';
+const PLAN_PATH = path.join(import.meta.dirname, '..', '..', PLAN_FILE);
+
+/**
+ * The context every plan has to list.
+ *
+ * It is the required context on both rulesets, and GitHub satisfies a required
+ * check on `skipped` - so this gate is what makes a skipped `check code` red,
+ * and a plan file that dropped it would turn that into a notice. The floor
+ * lives in the code so that editing one JSON line cannot do that.
+ */
+export const ALWAYS_INCLUDED = 'Aikido Security: check code';
+
+/**
+ * Read the plan: the list of check names, or null when there is no file.
+ *
+ * Only a missing file is null, and null is the strict default. Any other read
+ * error, and any content parsePlan refuses, throws: a plan the gate cannot
+ * read is not a plan it may relax itself on. `read` is there for the tests;
+ * the job always reads PLAN_FILE.
+ */
+export function loadPlan(read = () => readFileSync(PLAN_PATH, 'utf8')) {
+  let text;
+  try {
+    text = read();
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+  return parsePlan(text);
+}
+
+/**
+ * Exactly `{ "included": [<check name>, ...] }`, non-empty, naming ALWAYS_INCLUDED.
+ *
+ * An unknown key is refused rather than ignored, so a key someone expects to
+ * mean something (`"optional"`, a misspelt `"include"`) cannot sit in the file
+ * doing nothing.
+ */
+export function parsePlan(text) {
+  const refuse = (why) => {
+    throw new Error(
+      `${PLAN_FILE}: ${why}. The plan is not applied and the job fails; fix the file, or delete ` +
+        'it to require every Aikido check.'
+    );
+  };
+  let plan;
+  try {
+    plan = JSON.parse(text);
+  } catch (error) {
+    refuse(`not valid JSON (${error.message})`);
+  }
+  if (plan === null || typeof plan !== 'object' || Array.isArray(plan)) {
+    refuse('expected a JSON object');
+  }
+  const keys = Object.keys(plan);
+  if (keys.length !== 1 || keys[0] !== 'included') {
+    refuse(`expected exactly one key, "included", found ${JSON.stringify(keys)}`);
+  }
+  const { included } = plan;
+  if (
+    !Array.isArray(included) ||
+    included.length === 0 ||
+    included.some((name) => typeof name !== 'string' || name === '')
+  ) {
+    refuse('"included" must be a non-empty list of check names');
+  }
+  if (!included.includes(ALWAYS_INCLUDED)) {
+    refuse(`"included" must list "${ALWAYS_INCLUDED}"`);
+  }
+  return Object.freeze([...included]);
+}
+
+/**
+ * Whether this run is a check the plan does not include, reporting `skipped`.
+ *
+ * Name and conclusion, the same shape as BOT_EXEMPT. Only `skipped`: an
+ * unlisted check that reports anything else outside REACHED_A_VERDICT still
+ * declines. With no plan nothing is outside it.
+ */
+export const isOutsidePlan = (run, plan) =>
+  plan !== null && !plan.includes(run.name) && run.conclusion === 'skipped';
 
 /**
  * The conclusions that mean Aikido reached a verdict on this head.
@@ -92,9 +182,8 @@ export const AIKIDO_APP = 'aikido-pr-checks';
  *   muted for it.
  *
  * Everything else declines, `action_required` included - what an app posts
- * when it needs a human to go and do something, an empty wallet being the
- * example this file exists for. The denylist this replaced did not name it,
- * so it was scoring exit 0 and a green row.
+ * when it needs a human to go and do something. The denylist this replaced did
+ * not name it, so it was scoring exit 0 and a green row.
  *
  * ## Why the direction matters more than the membership
  *
@@ -130,17 +219,15 @@ export const REACHED_A_VERDICT = new Set(['success', 'failure', 'timed_out']);
  * Exempting a skip is the move #408 exists to argue against, so the reason it
  * is right here has to be the thing that is different, and it is this: on a
  * bot-authored head there is no Deep Review signal to lose, of any cause. The
- * vendor declines it before the wallet, the strictness or the path filter is
- * ever consulted, so a wallet that emptied and a wallet that is full produce
- * the identical `skipped` on that context. A gate cannot report a state it
- * cannot observe, and the empty wallet remains observable on every
+ * vendor declines it before any other setting is consulted, so every cause
+ * produces the identical `skipped` on that context. A gate cannot report a
+ * state it cannot observe, and every other cause remains observable on every
  * human-authored head, where this exemption does not apply.
  *
  * What would be a silencing is exempting the head. `Aikido Security: check
  * code` is the required context, it carries the SCA, and it RUNS on a
  * bot-authored head - `success` on all three of this repository's dependabot
- * pull requests, measured on #546, #491 and #414. It is also the context the
- * wallet does not reach (docs/security-gates.md). So it is observable there,
+ * pull requests, measured on #546, #491 and #414. So it is observable there,
  * and it is left fully guarded.
  *
  * That guard is not redundant with the ruleset. GitHub's required status checks
@@ -164,9 +251,7 @@ export const REACHED_A_VERDICT = new Set(['success', 'failure', 'timed_out']);
  * hand-fixed lockfile conflict, a review fix. There `pull_request.user.type` is
  * still `Bot` while Aikido's rule does not fire, so an exemption keyed on the
  * pull request author would excuse a Deep Review that skipped for some OTHER
- * cause. With the wallet empty, as it was on this branch's own head, that other
- * cause is #408 - and the exemption would have printed "whatever the wallet
- * says" while silencing exactly it.
+ * cause, and silence exactly the state this gate exists to report.
  */
 export const BOT_EXEMPT = Object.freeze({
   name: 'Aikido Security: Deep Review',
@@ -225,31 +310,41 @@ export const INTERVAL_MS = 15 * 1000;
  * from "plenty started and none of it was Aikido".
  */
 export function classify(checkRuns, total = checkRuns.length, options = {}) {
-  const { headAuthoredByBot = false } = options;
+  const { headAuthoredByBot = false, plan = null } = options;
   const mine = checkRuns.filter((run) => run.app?.slug === AIKIDO_APP);
-  const none = { total, runs: [], exempt: [] };
+  const none = { total, runs: [], exempt: [], notices: [] };
   if (mine.length === 0) return { verdict: total === 0 ? 'no-checks' : 'absent', ...none };
-  if (mine.some((run) => run.status !== 'completed')) {
-    return { verdict: 'running', total, runs: mine, exempt: [] };
-  }
   const exempt = headAuthoredByBot ? mine.filter(isBotExempt) : [];
-  const rest = mine.filter((run) => !exempt.includes(run));
+  // Before the running check, so a skipped check outside the plan is still
+  // reported on a head where another check is outstanding at the deadline.
+  const notices = mine.filter((run) => !exempt.includes(run) && isOutsidePlan(run, plan));
+  if (mine.some((run) => run.status !== 'completed')) {
+    const runs = mine.filter((run) => !notices.includes(run));
+    return { verdict: 'running', total, runs, exempt: [], notices };
+  }
+  const rest = mine.filter((run) => !exempt.includes(run) && !notices.includes(run));
+  const declined = rest.filter((run) => !REACHED_A_VERDICT.has(run.conclusion));
+  if (declined.length > 0) return { verdict: 'declined', total, runs: declined, exempt, notices };
+  // A listed check that was never posted has not run, and a later poll may
+  // still bring it, so this is not a settled verdict: awaitReview polls on to
+  // the deadline and reports it then.
+  const missing = (plan ?? []).filter((name) => !mine.some((run) => run.name === name));
+  if (missing.length > 0) {
+    return { verdict: 'missing', total, runs: mine, exempt, notices, missing };
+  }
   // Everything Aikido posted was the excused one. The exemption covers Deep
   // Review and nothing else, so a head carrying only that has not been scanned,
   // and reading it as a review is the exact false pass this gate removes.
-  if (rest.length === 0) return { verdict: 'only-exempt', total, runs: mine, exempt };
-  const declined = rest.filter((run) => !REACHED_A_VERDICT.has(run.conclusion));
-  if (declined.length > 0) return { verdict: 'declined', total, runs: declined, exempt };
-  return { verdict: 'reviewed', total, runs: rest, exempt };
+  if (rest.length === 0) return { verdict: 'only-exempt', total, runs: mine, exempt, notices };
+  return { verdict: 'reviewed', total, runs: rest, exempt, notices };
 }
 
 /**
  * The Aikido contexts on a head, as one comparable string.
  *
- * Keyed on the check name rather than a count, so the owner disabling
- * `Deep Review` - one of the two remedies #408 asks for - settles on the
- * remaining context instead of waiting out the deadline for a second one that
- * is never coming.
+ * Keyed on the check name rather than a count, so a repository with
+ * `Deep Review` disabled settles on the remaining context instead of waiting
+ * out the deadline for a second one that is never coming.
  */
 const contextsOf = (result) =>
   result.runs
@@ -321,7 +416,7 @@ export async function listCheckRuns(repo, sha, token, fetchImpl = fetch) {
  * earlier read would otherwise be vouching for.
  *
  * The gap is narrower than `intervalMs`, so this costs one extra poll on a
- * fully-reviewed head and nothing at all today, where every head declines.
+ * fully-reviewed head and nothing on a head that declines.
  */
 export async function awaitReview(repo, sha, token, options = {}) {
   const {
@@ -331,13 +426,14 @@ export async function awaitReview(repo, sha, token, options = {}) {
     deadlineMs = DEADLINE_MS,
     intervalMs = INTERVAL_MS,
     headAuthoredByBot = false,
+    plan = null,
   } = options;
 
   const started = now();
   let confirming = null;
   for (;;) {
     const runs = await listCheckRuns(repo, sha, token, fetchImpl);
-    const result = classify(runs, runs.length, { headAuthoredByBot });
+    const result = classify(runs, runs.length, { headAuthoredByBot, plan });
     const settled =
       result.verdict === 'declined' ||
       (result.verdict === 'reviewed' && contextsOf(result) === confirming);
@@ -347,21 +443,50 @@ export async function awaitReview(repo, sha, token, options = {}) {
   }
 }
 
+/**
+ * Escape workflow-command data: `%`, CR and LF. Unescaped, the runner ends the
+ * notice at the first line break and decodes a literal `%` wrongly.
+ */
+const escapeCommand = (text) =>
+  text.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+
+/**
+ * One line of log text. Check names, titles and summaries come from the API,
+ * and a line break inside one would start a line of its own, which the runner
+ * reads as a workflow command when it begins with `::`.
+ */
+const oneLine = (text) => String(text).replaceAll(/[\r\n]+/gu, ' ');
+const summaryOf = (run) => oneLine((run.output?.summary ?? '(no summary)').split('\n')[0]);
+
 /** The announcement, which is the whole point of the gate. */
 export function describe(result, sha) {
   const head = `aikido-coverage: ${sha}`;
   const lines = result.runs.map(
     (run) =>
-      `  ${run.name}  ${run.conclusion ?? run.status}\n` +
-      `    ${run.output?.title ?? '(no title)'}\n` +
-      `    ${(run.output?.summary ?? '(no summary)').split('\n')[0]}`
+      `  ${oneLine(run.name)}  ${oneLine(run.conclusion ?? run.status)}\n` +
+      `    ${oneLine(run.output?.title ?? '(no title)')}\n` +
+      `    ${summaryOf(run)}`
   );
   const exemptions = (result.exempt ?? [])
     .map(
       (run) =>
-        `  ${run.name}  ${String(run.conclusion)}  EXEMPT: the head is bot-authored, and\n` +
-        '    Aikido declines this context on a bot-authored head whatever the wallet says.\n' +
+        `  ${oneLine(run.name)}  ${String(run.conclusion)}  EXEMPT: the head is bot-authored, and\n` +
+        '    Aikido declines this context on every bot-authored head.\n' +
         '    Accepted 2026-09-22, #549. See docs/security-gates.md.\n'
+    )
+    .join('');
+  // Said out loud twice: in the log beside the checks that ran, and as a
+  // workflow notice so it shows on the run summary without opening the log.
+  const notices = (result.notices ?? [])
+    .map(
+      (run) =>
+        `  ${oneLine(run.name)}  ${String(run.conclusion)}  NOTICE: not a check this repository's\n` +
+        `    plan includes (${PLAN_FILE}), so it is reported and not required.\n` +
+        `    ${summaryOf(run)}\n` +
+        `::notice::${escapeCommand(
+          `${run.name} reported ${String(run.conclusion)}. It is not a check this ` +
+            `repository's plan includes (${PLAN_FILE}), so it is not required.`
+        )}\n`
     )
     .join('');
   switch (result.verdict) {
@@ -370,21 +495,32 @@ export function describe(result, sha) {
         `${head}: ${String(result.runs.length)} Aikido check(s) ran.\n${lines.join('\n')}\n` +
         // An accepted absence still gets said out loud. A gate that skips part
         // of itself silently is the shape this whole file exists to remove.
-        exemptions
+        exemptions +
+        notices
       );
     case 'declined':
       return (
         `${head}: Aikido did not review this pull request.\n\n${lines.join('\n')}\n\n` +
         'A declined check is not a passed check. Read the summary above: it names the\n' +
-        'cause, and the conclusion does not. An empty credit wallet is an owner action -\n' +
-        'nothing in this repository configures it - and until it is resolved no Aikido\n' +
-        'review is happening on any pull request, whatever the pull request page shows.\n'
+        'cause, and the conclusion does not. Until that cause is resolved, no Aikido\n' +
+        'review is happening on this pull request, whatever the pull request page shows.\n' +
+        notices
+      );
+    case 'missing':
+      return (
+        `${head}: a check this repository's plan includes was not posted.\n\n` +
+        result.missing.map((name) => `  missing: ${oneLine(name)}\n`).join('') +
+        `\n${lines.join('\n')}\n\n` +
+        `Every check listed in ${PLAN_FILE} has to run on the head. Check that the app is\n` +
+        'still installed and has not renamed the context, or correct the name in the file.\n' +
+        notices
       );
     case 'running':
       return (
         `${head}: Aikido was still running at the deadline.\n\n${lines.join('\n')}\n\n` +
         'A review that has not finished has not reviewed anything. Re-run this check once\n' +
-        'the Aikido checks above have completed.\n'
+        'the Aikido checks above have completed.\n' +
+        notices
       );
     case 'only-exempt':
       return (
@@ -421,10 +557,23 @@ async function main(argv, env) {
     );
     return 2;
   }
+  let plan;
+  try {
+    plan = loadPlan();
+  } catch (error) {
+    process.stderr.write(`aikido-coverage: ${error.message}\n`);
+    return 1;
+  }
+  process.stdout.write(
+    plan === null
+      ? `aikido-coverage: no ${PLAN_FILE}, so every Aikido check has to run.\n`
+      : `aikido-coverage: ${PLAN_FILE} includes: ${plan.join(', ')}.\n`
+  );
   // One extra request, on the same host the gate already talks to, so the
   // predicate it implements is the one the vendor documents.
   const result = await awaitReview(repo, sha, token, {
     headAuthoredByBot: await headCommitIsBot(repo, sha, token),
+    plan,
   });
   process.stdout.write(describe(result, sha));
   return result.verdict === 'reviewed' ? 0 : 1;

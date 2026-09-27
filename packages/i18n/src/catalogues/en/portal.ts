@@ -479,6 +479,12 @@ export const portal: Messages = {
   'portal.assistant.compose.placeholder': 'What did the practice write down about my last visit?',
   'portal.assistant.compose.ask': 'Ask',
   'portal.assistant.compose.stop': 'Stop',
+  'portal.assistant.help.visits.lead': 'A question about your appointments?',
+  'portal.assistant.help.visits.link': 'Ask the assistant about your appointments',
+  'portal.assistant.help.visits.question': 'When is my next appointment, and what is it for?',
+  'portal.assistant.help.bills.lead': 'A question about your bills?',
+  'portal.assistant.help.bills.link': 'Ask the assistant about your bills',
+  'portal.assistant.help.bills.question': 'What is left to pay, and which visits is it for?',
 
   /* Reading the answer aloud. The copy says what is read and what is not sent,
      because a control that starts speaking somebody's balance in a waiting room
@@ -501,6 +507,10 @@ export const portal: Messages = {
   'portal.assistant.dictation.stop': 'Stop the microphone',
   'portal.assistant.dictation.hint':
     'Your device turns your speech into writing on the device itself, and nothing is sent anywhere to do it. The words go into the box above, where you can change them, and nothing is asked until you press Ask.',
+  'portal.assistant.dictation.hintHosted':
+    'The microphone button sends what you say to {host} to be turned into writing, under {agreement}, and nothing is sent until you press it. The words go into the box above, where you can change them, and nothing is asked until you press Ask.',
+  'portal.assistant.dictation.noLanguageHosted':
+    'The speech service your practice uses does not write in the language this page is in, so you can only type here.',
   'portal.assistant.dictation.starting': 'Opening the microphone.',
   'portal.assistant.dictation.listening': 'The microphone is on. Your words go into the box above.',
   'portal.assistant.dictation.noLanguage':

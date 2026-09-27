@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/ccda",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "C-CDA R2.1 Continuity of Care Document codec for the Openrunic EMR: generate and import.",
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -18,7 +18,7 @@
     "dist"
   ],
   "engines": {
-    "node": "^22.12"
+    "node": ">=22.12"
   },
   "scripts": {
     "build": "tsc --build tsconfig.json",

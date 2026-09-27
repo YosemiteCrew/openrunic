@@ -106,6 +106,7 @@ const DOCUMENT_A = testId(240);
 const DOCUMENT_B = testId(241);
 const TASK_A = testId(250);
 const TASK_B = testId(251);
+const TASK_C = testId(252);
 const THREAD_A = testId(260);
 const THREAD_B = testId(261);
 const MESSAGE_A = testId(270);
@@ -1053,6 +1054,57 @@ describe('results', () => {
     expect(await ids('sort=createdAt&order=desc')).toEqual([REPORT_B, REPORT_A]);
   });
 
+  it('answers a named set of ids, and says nothing about the ones it does not hold', async () => {
+    /*
+     * What the sign-off queue's ME/TEAM filter sends. Assignment is a `Task`
+     * fact over the `RESULT` stream and no column here carries it, so the
+     * caller asks the task collection whose work a result is and names the
+     * answer (#535).
+     *
+     * The unknown id in the middle is the half that matters: the response is
+     * SHORTER than the request, with no placeholder row. A row invented for it
+     * would put a panel on a report that does not exist.
+     */
+    const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
+    seed(
+      dataset,
+      'DiagnosticReport',
+      makeReportRow(),
+      makeReportRow({ id: REPORT_B, patientId: OTHER_PATIENT, issuedAt: LATE })
+    );
+
+    // Both spellings of the separator. `URLSearchParams` percent-encodes a
+    // comma, so the web client sends `%2C` and a hand-written URL sends `,`;
+    // asserting only the literal one would leave the shape the app emits
+    // unexercised.
+    for (const separator of [',', '%2C']) {
+      const page = await body<ListResponse<DiagnosticReportDto>>(
+        await call(app, 'get', `/bff/v0/results?ids=${[REPORT_B, testId(999)].join(separator)}`)
+      );
+      expect(page.data.map((row) => row.id)).toEqual([REPORT_B]);
+      // The total is the named set, not the index: a pager over a named set
+      // that counted every report would page off the end of its own request.
+      expect(page.page.total).toBe(1);
+    }
+  });
+
+  it.each([
+    ['an empty id set', 'ids='],
+    ['a trailing comma in the id set', `ids=${REPORT_A},`],
+    ['an id that is not a UUID', 'ids=openrunic-not-an-id'],
+    [
+      'more ids than one page can hold',
+      `ids=${Array.from({ length: 101 }, (_unused, index) => testId(index + 1)).join(',')}`,
+    ],
+  ])('rejects %s on the results queue with a 400', async (_label, query) => {
+    const { app } = createTestApp();
+    const res = await call(app, 'get', `/bff/v0/results?${query}`);
+
+    expect(res.status).toBe(400);
+    expect(res.headers.get('content-type')).toBe('application/problem+json');
+  });
+
   it('records a minimal report on the schema defaults', async () => {
     const { app } = createTestApp();
     const res = await call(app, 'post', '/bff/v0/results', { body: VALID_REPORT });
@@ -1531,12 +1583,61 @@ describe('tasks', () => {
     expect(await ids(`patientId=${PATIENT}`)).toEqual([TASK_A]);
     expect(await ids(`assigneeUserId=${CLINICIAN}`)).toEqual([TASK_A]);
     expect(await ids('assigneeTeamKey=front-desk')).toEqual([TASK_B]);
+    expect(await ids('assigneeType=USER')).toEqual([TASK_A]);
+    expect(await ids('assigneeType=TEAM')).toEqual([TASK_B]);
     expect(await ids('slaState=BREACH')).toEqual([TASK_B]);
     expect(await ids('from=2026-08-15T00:00:00.000Z')).toEqual([TASK_B]);
     expect(await ids('to=2026-08-15T00:00:00.000Z')).toEqual([TASK_A]);
     expect(await ids('sort=dueAt&order=desc')).toEqual([TASK_B, TASK_A]);
     expect(await ids('sort=priority')).toEqual([TASK_A, TASK_B]);
     expect(await ids('sort=createdAt&order=desc')).toEqual([TASK_B, TASK_A]);
+  });
+
+  it("answers an inbox as that user's own work and the unclaimed pool, and nobody else's", async () => {
+    const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
+    seed(
+      dataset,
+      'Task',
+      makeTaskRow(),
+      makeTaskRow({ id: TASK_B, assigneeType: 'TEAM', assigneeUserId: null, assigneeTeamKey: 'x' }),
+      makeTaskRow({ id: TASK_C, assigneeUserId: OTHER_USER })
+    );
+    const ids = async (query: string): Promise<string[]> =>
+      (
+        await body<ListResponse<TaskDto>>(await call(app, 'get', `/bff/v0/tasks?${query}`))
+      ).data.map((row) => row.id);
+
+    /* The baseline is the assertion, not the setup: it says the third task is
+       reachable for this caller, so its absence below is the union refusing it
+       rather than the chart gate hiding it further up. */
+    expect(await ids('')).toEqual([TASK_A, TASK_B, TASK_C]);
+    expect(await ids(`inboxFor=${CLINICIAN}`)).toEqual([TASK_A, TASK_B]);
+    // The union narrows rather than replaces: each half of the inbox alone.
+    expect(await ids(`inboxFor=${CLINICIAN}&assigneeType=USER`)).toEqual([TASK_A]);
+    expect(await ids(`inboxFor=${CLINICIAN}&assigneeType=TEAM`)).toEqual([TASK_B]);
+  });
+
+  it('reads a task still in flight as open and a finished one as not', async () => {
+    const { app, dataset } = createTestApp();
+    authorise(dataset, PATIENT, OTHER_PATIENT);
+    seed(
+      dataset,
+      'Task',
+      makeTaskRow({ status: 'ON_HOLD' }),
+      makeTaskRow({ id: TASK_B, status: 'DONE' }),
+      makeTaskRow({ id: TASK_C, status: 'CANCELLED' })
+    );
+    const ids = async (query: string): Promise<string[]> =>
+      (
+        await body<ListResponse<TaskDto>>(await call(app, 'get', `/bff/v0/tasks?${query}`))
+      ).data.map((row) => row.id);
+
+    /* On hold is in flight: somebody is waiting on something, which is work an
+       inbox has to keep showing. The two halves are asserted as a partition of
+       the same three rows, so a status landing in both sets fails here. */
+    expect(await ids('open=true')).toEqual([TASK_A]);
+    expect(await ids('open=false')).toEqual([TASK_B, TASK_C]);
   });
 
   it('sorts a task with no due date last rather than first', async () => {

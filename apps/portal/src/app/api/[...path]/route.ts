@@ -45,6 +45,9 @@ function upstreamPath(method: string, path: readonly string[]): string | null {
   ) {
     return '/bff/v0/agent/turns';
   }
+  if (method === 'POST' && path.join('/') === 'bff/v0/agent/realtime/sessions') {
+    return '/bff/v0/agent/realtime/sessions';
+  }
   return null;
 }
 

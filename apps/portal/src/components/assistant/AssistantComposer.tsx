@@ -29,10 +29,9 @@
 import { useCallback, useState } from 'react';
 import { Button } from '@openrunic/ui';
 import { useTranslator } from '@/lib/i18n/messages';
-import type { CapturePort } from '@/lib/voice';
+import type { CapturePort, DictationEgress } from '@/lib/voice';
 import { AssistantDictation } from './AssistantDictation';
-import { appendDictation } from './dictation';
-import { useDictation } from './useDictation';
+import { appendDictation, useDictation } from '@openrunic/voice';
 
 /** The API refuses a longer turn. Saying so beats a rejection after the fact. */
 const MAX_QUESTION = 8000;
@@ -53,6 +52,14 @@ export interface AssistantComposerProps {
    * tests, where jsdom has no microphone to drive.
    */
   capture?: CapturePort | null;
+  /** Where that microphone sends the audio, or null while it stays on the device. */
+  dictationEgress?: DictationEgress | null;
+  /**
+   * A question already in the box when it first draws, from the screen the
+   * reader came from. It is written in and never sent: the reader still presses
+   * the same button to ask it, and can change or clear it first.
+   */
+  initialQuestion?: string;
 }
 
 export function AssistantComposer({
@@ -61,9 +68,11 @@ export function AssistantComposer({
   onStop,
   chartPatientId,
   capture = null,
+  dictationEgress = null,
+  initialQuestion = '',
 }: Readonly<AssistantComposerProps>) {
   const t = useTranslator();
-  const [question, setQuestion] = useState('');
+  const [question, setQuestion] = useState(initialQuestion);
 
   const dictated = useCallback((text: string) => {
     setQuestion((current) => appendDictation(current, text, MAX_QUESTION));
@@ -94,6 +103,7 @@ export function AssistantComposer({
 
       <AssistantDictation
         availability={dictation.availability}
+        egress={dictationEgress}
         onStart={dictation.start}
         onStop={dictation.stop}
         state={dictation.state}

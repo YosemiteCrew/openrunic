@@ -25,6 +25,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { checkReport, readReport } from './drill-report.mjs';
 import { inspect } from './required-routes.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -156,6 +157,15 @@ if (built !== 0) {
   process.exit(built);
 }
 
+process.stdout.write('Building the portal application in live mode\n');
+const portalBuilt = run('pnpm', ['turbo', 'run', 'build', '--filter=portal'], {
+  env: { NEXT_PUBLIC_API_MODE: 'live', NEXT_TELEMETRY_DISABLED: '1' },
+});
+if (portalBuilt !== 0) {
+  process.stdout.write('\nThe portal application did not build; its browser harness cannot run.\n');
+  process.exit(portalBuilt);
+}
+
 // Playwright runs from THIS package, and the working directory is load-bearing.
 // Playwright discovers its config by walking up from the working directory; run
 // it from the repository root and it finds no config, falls back to defaults,
@@ -164,9 +174,22 @@ if (built !== 0) {
 // browser tests. The failure is a wall of "Cannot read properties of undefined"
 // that looks like a broken application and is nothing of the kind.
 process.stdout.write('\nRunning the full-day clinical drill\n');
-process.exit(
-  run('pnpm', ['exec', 'playwright', 'test'], {
-    cwd: path.resolve(here, '..'),
-    env: { NEXT_PUBLIC_API_MODE: 'mock' },
-  })
-);
+const e2eDir = path.resolve(here, '..');
+const drilled = run('pnpm', ['exec', 'playwright', 'test'], {
+  cwd: e2eDir,
+  env: { NEXT_PUBLIC_API_MODE: 'mock' },
+});
+
+/**
+ * A drill nobody can review is not an acceptance test. This prints what the run
+ * covered - projects, spec files, scenario count - into the job log, where it
+ * is readable without downloading and decoding anything, and fails when the
+ * report names none of them.
+ *
+ * It only decides the exit code when Playwright was happy: a run that already
+ * failed has a better failure to report, and restating it as "the artifact is
+ * thin" would bury the cause.
+ */
+const report = checkReport(readReport());
+process.stdout.write(`\n${report.lines.join('\n')}\n`);
+process.exit(drilled !== 0 || report.ok ? drilled : 1);

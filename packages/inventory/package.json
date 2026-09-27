@@ -1,6 +1,6 @@
 {
   "name": "@openrunic/inventory",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Stock, lots and dispensing for the Openrunic EMR: what is on the shelf, which lot it comes from, and what leaves it.",
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -18,7 +18,7 @@
     "dist"
   ],
   "engines": {
-    "node": "^22.12"
+    "node": ">=22.12"
   },
   "scripts": {
     "build": "tsc --build tsconfig.json",

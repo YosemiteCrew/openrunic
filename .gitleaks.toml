@@ -52,22 +52,11 @@ useDefault = true
   # is lost: what makes this safe to allowlist is the shape of the value, not
   # the punctuation around it.
   #
-  # Proved rather than argued, with a probe file of five lines committed and
-  # scanned twice, once with this config moved aside:
+  # Checked by scanning a probe file with and without this config: a catalogue
+  # key is reported only without it, and a credential-shaped value on a
+  # `labelKey:` line is still reported with it.
   #
-  #   labelKey: 'marketing.pillar.hospitals.point1'  baseline 1, allowlisted 0
-  #   labelKey: 'sk-proj-abc123DEF456ghi789JKL012'   baseline 1, allowlisted 1
-  #
-  # The second line is the case that matters: a credential wearing a `labelKey:`
-  # name, which is the only way this allowlist could hide something. It is still
-  # caught, because the value has a hyphen and an uppercase run and so is not
-  # the dotted-lowercase shape.
-  #
-  # One honest caveat. That was run with gitleaks 8.30.1; CI pins 8.24.2. The
-  # `[allowlist] regexTarget` semantics have not changed across 8.x, but the two
-  # numbers are not the same number, so the CI run is the one that decides.
-  #
-  # Owner: ankit-yc. No re-review date, per the header. Revisit condition: if
+  # Owner: maintainers. No re-review date, per the header. Revisit condition: if
   # this ever has to be widened - a different key shape, a value with a
   # character this does not allow - that is a signal the two gates have stopped
   # agreeing about what a catalogue key looks like, and the answer is to look at

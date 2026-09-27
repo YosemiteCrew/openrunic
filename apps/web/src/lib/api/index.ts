@@ -32,8 +32,6 @@ export {
   MOCK_ROOMS,
   MOCK_STATUS_SINCE,
   mockCoveragesForPatient,
-  mockPatientById,
-  mockProviderName,
   mockStatusSince,
   mockVerifyEligibility,
 } from './mock/fixtures';
@@ -54,6 +52,11 @@ export {
   usePatients,
 } from './hooks';
 export type { AsyncState, AsyncStatus, HookOptions, MutationOutcome, MutationState } from './hooks';
+/* Names for a page of rows that carries ids and no names. See `names.ts`: a
+   name is decoration, so these answer with a lookup and never with a state a
+   screen could fail on. */
+export { usePatientNames, useProviderNames } from './names';
+export type { PatientLookup, ProviderLookup } from './names';
 export * from './types';
 
 /* Admin, developer platform and reports, on a fixture-only client.
@@ -150,14 +153,14 @@ export {
 } from './mock/admin';
 export type { AdminMockOptions } from './mock/admin';
 
-/* Orders, results and the typed inbox, on a fixture-only client.
+/* Orders, results and the typed inbox.
 
-   `/bff/v0/orders` and `/bff/v0/results` are both served, transitions included,
-   and the `orders` and `results` methods on {@link ApiClient} already reach
-   them; what is missing is the mapping from those payloads into the worklist
-   view types below. The inbox is the one thing here with no route of its own:
-   it is a composition across results, messages and tasks that the API does not
-   assemble. */
+   All three read the API in live mode, mapped onto the view types below:
+   orders from `GET /bff/v0/orders`, results from `GET /bff/v0/results`, and the
+   inbox from `GET /bff/v0/tasks` - one work engine whose five streams are
+   `type` filters (#535). None of the three DTOs carries a patient or a
+   clinician, only their ids, so the screens name their rows through
+   `names.ts` rather than through the fixtures (#559). */
 export {
   ASSIGNMENTS,
   createWorklistClient,
@@ -166,7 +169,9 @@ export {
   filterResults,
   INBOX_STREAMS,
   isBulkSignable,
+  liveInbox,
   liveOrders,
+  liveResults,
   ORDER_CATEGORIES,
   ORDER_PRIORITIES,
   ORDER_STATUSES,
@@ -175,20 +180,29 @@ export {
   RESULT_FLAGS,
   RESULT_STATUSES,
   slaState,
+  toInboxItem,
+  toInboxPage,
   toOrder,
   toOrderPage,
+  toReportQuery,
+  toTaskQuery,
+  toResultAnalyte,
+  toResultPage,
+  toResultReport,
   useInbox,
   useOrders,
+  useResultAnalytes,
   useResults,
   WARNING_TIERS,
   warningsFor,
   worklist,
-  WORKLIST_IS_FIXTURE_BACKED,
+  worklistFor,
 } from './worklist';
 export type {
   Assignment,
   InboxItem,
   InboxListQuery,
+  InboxPage,
   InboxStream,
   Order,
   OrderCatalogEntry,
@@ -203,7 +217,9 @@ export type {
   ResultAnalyte,
   ResultFlag,
   ResultListQuery,
+  ResultPage,
   ResultReport,
+  ResultSignature,
   ResultStatus,
   SlaState,
   WarningTier,

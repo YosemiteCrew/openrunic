@@ -1,4 +1,6 @@
-import { probeAssistant, streamAgentTurn } from '@/lib/agent';
+import type { RealtimeMint } from '@openrunic/voice';
+
+import { mintRealtimeSession, probeAssistant, streamAgentTurn } from '@/lib/agent';
 import type { AgentAvailability, AgentEvent, AgentTurnRequest } from '@/lib/agent';
 import { API_CONFIG, IS_MOCK_MODE } from '@/lib/api';
 
@@ -26,3 +28,7 @@ export const defaultProbe: ProbeAssistant = (signal) =>
   IS_MOCK_MODE ? Promise.resolve(ABSENT) : probeAssistant(API_CONFIG, signal);
 
 export const defaultRunTurn: RunAgentTurn = (request) => streamAgentTurn(API_CONFIG, request);
+
+/** Asks the API for a dictation credential. Only called when the API named a service. */
+export const defaultMintRealtime: RealtimeMint = (language, signal) =>
+  mintRealtimeSession(API_CONFIG, language, signal);

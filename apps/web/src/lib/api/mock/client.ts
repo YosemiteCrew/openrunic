@@ -15,6 +15,7 @@ import type {
   ClinicalNoteDto,
   ClinicalNoteState,
   DiagnosticReportDto,
+  DiagnosticReportListQuery,
   EncounterDto,
   EncounterListQuery,
   EncounterStatus,
@@ -35,6 +36,7 @@ import type {
   ServiceRequestStatus,
   StatementDto,
   TaskDto,
+  TaskListQuery,
   TaskWorkStatus,
   UserDto,
   UserListQuery,
@@ -54,6 +56,7 @@ import {
   MOCK_ACTING_USER,
   MOCK_CLAIM_RECORDS,
   MOCK_DIAGNOSTIC_REPORTS,
+  MOCK_RESULT_OBSERVATIONS,
   MOCK_ENCOUNTERS,
   MOCK_FORM_DEFINITION_RECORDS,
   MOCK_NOTES,
@@ -116,10 +119,15 @@ export function filterPatients(
   rows: readonly Patient[],
   query: PatientListQuery = {}
 ): readonly Patient[] {
-  const { q, mrn, family, given, birthDate, active } = query;
+  const { ids, q, mrn, family, given, birthDate, active } = query;
   const needle = q?.trim().toLowerCase();
+  // An empty set matches nothing, the same as over the API: it is a filter the
+  // caller asked for, not one it left out. `undefined` is the absent one, which
+  // is why this is a Set-or-undefined rather than an always-present Set.
+  const wanted = ids === undefined ? undefined : new Set(ids);
 
   const matched = rows.filter((patient) => {
+    if (wanted && !wanted.has(patient.id)) return false;
     if (needle) {
       const searchable: string = haystack(patient);
       if (!searchable.includes(needle)) return false;
@@ -219,6 +227,166 @@ function byServiceRequest(
     }
     return a.scheduledFor.localeCompare(b.scheduledFor) * direction;
   };
+}
+
+/**
+ * The reports a `/bff/v0/results` query matches.
+ *
+ * `reviewed` is a boolean over a nullable timestamp rather than a column, which
+ * is what the route does too: `reviewed=false` is the sign-off queue and
+ * `reviewed=true` the reports somebody has already acted on, and the absence of
+ * the filter is both.
+ */
+export function filterDiagnosticReports(
+  rows: readonly DiagnosticReportDto[],
+  query: DiagnosticReportListQuery = {}
+): readonly DiagnosticReportDto[] {
+  const matched = rows.filter(
+    (report) => matchesDiagnosticReport(report, query) && withinIssuedWindow(report, query)
+  );
+
+  const direction = query.order === 'desc' ? -1 : 1;
+  return [...matched].sort(byDiagnosticReport(query.sort ?? 'issuedAt', direction));
+}
+
+/** The exact-match half, plus `reviewed` - a boolean read off a nullable timestamp. */
+function matchesDiagnosticReport(
+  report: DiagnosticReportDto,
+  {
+    patientId,
+    encounterId,
+    serviceRequestId,
+    status,
+    category,
+    abnormalFlag,
+    reviewed,
+  }: DiagnosticReportListQuery
+): boolean {
+  if (patientId && report.patientId !== patientId) return false;
+  if (encounterId && report.encounterId !== encounterId) return false;
+  if (serviceRequestId && report.serviceRequestId !== serviceRequestId) return false;
+  if (status && report.status !== status) return false;
+  if (category && report.category !== category) return false;
+  if (abnormalFlag && report.abnormalFlag !== abnormalFlag) return false;
+  if (reviewed !== undefined && (report.reviewedAt !== null) !== reviewed) return false;
+  return true;
+}
+
+/** The window half, over `issuedAt`. Half-open, as for orders above. */
+function withinIssuedWindow(
+  report: DiagnosticReportDto,
+  { from, to }: DiagnosticReportListQuery
+): boolean {
+  if (from && report.issuedAt < from) return false;
+  if (to && report.issuedAt >= to) return false;
+  return true;
+}
+
+/**
+ * The comparator the results list is sorted by.
+ *
+ * `effectiveAt` is the only nullable key, and it carries the direction the same
+ * way `scheduledFor` does: absent sorts last ascending, first descending.
+ */
+function byDiagnosticReport(
+  sort: NonNullable<DiagnosticReportListQuery['sort']>,
+  direction: number
+): (a: DiagnosticReportDto, b: DiagnosticReportDto) => number {
+  if (sort === 'effectiveAt') {
+    return (a, b) => {
+      if (a.effectiveAt === null || b.effectiveAt === null) {
+        return ((a.effectiveAt === null ? 1 : 0) - (b.effectiveAt === null ? 1 : 0)) * direction;
+      }
+      return a.effectiveAt.localeCompare(b.effectiveAt) * direction;
+    };
+  }
+  return (a, b) => a[sort].localeCompare(b[sort]) * direction;
+}
+
+/**
+ * The task statuses that mean the work is still in flight.
+ *
+ * Mirrored by hand from the API's own set, like every enum in `types.ts`: this
+ * package has no import path into `apps/api`, and the openapi contract test is
+ * what holds the two copies together.
+ */
+const OPEN_TASK_STATUSES: ReadonlySet<TaskWorkStatus> = new Set(['OPEN', 'IN_PROGRESS', 'ON_HOLD']);
+
+/**
+ * The mock side of `GET /bff/v0/tasks`, filtered and sorted the way
+ * `taskListQuerySchema` says the route is.
+ *
+ * Split the same three ways as the orders filter above - which tasks, whose
+ * work, and over what window - because `inboxFor` is a union rather than an
+ * equality and does not read as one guard among nine.
+ */
+export function filterTasks(
+  rows: readonly TaskDto[],
+  query: TaskListQuery = {}
+): readonly TaskDto[] {
+  const matched = rows.filter(
+    (task) => matchesTask(task, query) && ownsTask(task, query) && withinDueWindow(task, query)
+  );
+
+  const direction = query.order === 'desc' ? -1 : 1;
+  return [...matched].sort(byTask(query.sort ?? 'dueAt', direction));
+}
+
+/** The exact-match half, plus `open` - a boolean read off a status set. */
+function matchesTask(
+  task: TaskDto,
+  { type, status, priority, patientId, slaState, open }: TaskListQuery
+): boolean {
+  if (type && task.type !== type) return false;
+  if (status && task.status !== status) return false;
+  if (priority && task.priority !== priority) return false;
+  if (patientId && task.patientId !== patientId) return false;
+  if (slaState && task.slaState !== slaState) return false;
+  if (open !== undefined && open !== OPEN_TASK_STATUSES.has(task.status)) return false;
+  return true;
+}
+
+/**
+ * The assignment half.
+ *
+ * `inboxFor` is the one filter here that is not an equality: an inbox is that
+ * user's own work AND the pool nobody has claimed, and `assigneeType` is the
+ * column that decides which a row is in - a `TEAM` task with a stale
+ * `assigneeUserId` is still unclaimed.
+ */
+function ownsTask(
+  task: TaskDto,
+  { assigneeUserId, assigneeTeamKey, assigneeType, inboxFor }: TaskListQuery
+): boolean {
+  if (assigneeUserId && task.assigneeUserId !== assigneeUserId) return false;
+  if (assigneeTeamKey && task.assigneeTeamKey !== assigneeTeamKey) return false;
+  if (assigneeType && task.assigneeType !== assigneeType) return false;
+  if (inboxFor && task.assigneeType !== 'TEAM' && task.assigneeUserId !== inboxFor) return false;
+  return true;
+}
+
+/** The window half, over `dueAt`: `from` inclusive, `to` exclusive. */
+function withinDueWindow(task: TaskDto, { from, to }: TaskListQuery): boolean {
+  if (from && (task.dueAt === null || task.dueAt < from)) return false;
+  if (to && (task.dueAt === null || task.dueAt >= to)) return false;
+  return true;
+}
+
+/**
+ * The comparator the task list is sorted by.
+ *
+ * A task with no due date is not the most urgent one, so an absent `dueAt`
+ * sorts last ascending - and first descending, carrying the direction like
+ * every other row, which is what the route's own comparator does through
+ * `comparable()`.
+ */
+function byTask(
+  sort: NonNullable<TaskListQuery['sort']>,
+  direction: number
+): (a: TaskDto, b: TaskDto) => number {
+  if (sort === 'createdAt') return (a, b) => a.createdAt.localeCompare(b.createdAt) * direction;
+  if (sort === 'priority') return (a, b) => a.priority.localeCompare(b.priority) * direction;
+  return (a, b) => (a.dueAt ?? '\uffff').localeCompare(b.dueAt ?? '\uffff') * direction;
 }
 
 export function filterAppointments(
@@ -805,7 +973,15 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
       me: () =>
         answer(() => {
           const roles = options.roles ?? heldSession()?.identity.roles ?? [];
-          return { roles: [...roles], permissions: capabilitiesForRoles(roles) };
+          /* The demonstration build signs one clinician in, and the fixtures
+             are written about them: `MOCK_TASKS` assigns to this id, so an
+             inbox asking "which of these are mine" gets the same answer here
+             as it would from a server that had resolved the token. */
+          return {
+            roles: [...roles],
+            permissions: capabilitiesForRoles(roles),
+            userId: MOCK_ACTING_USER,
+          };
         }),
     },
 
@@ -1076,6 +1252,28 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
     },
 
     results: {
+      list: (query = {}) =>
+        answer(() =>
+          paginate(filterDiagnosticReports(results.all(), query), query.page, query.pageSize)
+        ),
+      /* Read through the report, as the route does: an id naming a report this
+         client has no row for is absent rather than an empty list, which would
+         read as a report with no analytes. */
+      listObservations: (id, query = {}) =>
+        answer(() => {
+          results.require(id, NO_RESULT);
+          const rows = MOCK_RESULT_OBSERVATIONS.filter(
+            (observation) => observation.diagnosticReportId === id
+          );
+          const direction = query.order === 'desc' ? -1 : 1;
+          const sort = query.sort ?? 'sequence';
+          const sorted = [...rows].sort((a, b) =>
+            sort === 'sequence'
+              ? (a.sequence - b.sequence) * direction
+              : a[sort].localeCompare(b[sort]) * direction
+          );
+          return paginate(sorted, query.page, query.pageSize);
+        }),
       review: (id) =>
         answer(() => {
           const before = results.require(id, NO_RESULT);
@@ -1093,6 +1291,8 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
     },
 
     tasks: {
+      list: (query = {}) =>
+        answer(() => paginate(filterTasks(tasks.all(), query), query.page, query.pageSize)),
       complete: (id, body = {}) =>
         answer(() => {
           const before = tasks.require(id, NO_TASK);

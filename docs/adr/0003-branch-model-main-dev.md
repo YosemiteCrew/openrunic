@@ -16,14 +16,12 @@ carries everything sitting on `dev`, so an urgent fix ships the rest with it), i
 [Hotfixes](../../RELEASING.md#hotfixes) section of RELEASING.md, which also records the one
 deliberate, reviewed way to widen the guard.
 
-Amended 2026-09-07, in the gating bullets only, after two sentences in this document were
-measured false. It said a `skipped` context "never becomes success" - it passes, and the
-consequence is that the `Validate commit messages` carve-out would have exempted Dependabot rather
-than deadlocking it. And it said rulesets "apply consistently to admins" - both rulesets carry an
-always-bypass for repository admin, which GitHub's own evaluation record shows being used. Both
-sentences read as settled reasoning and neither had an instrument behind it. The corrections are in
-place below, alongside a new _What a required context guarantees_ section that states which
-conclusions pass, which of those are measured here, and which are not measurable at all.
+Amended 2026-09-07, in the gating bullets only, after a sentence in this document was measured
+false. It said a `skipped` context "never becomes success" - it passes, and the consequence is that
+the `Validate commit messages` carve-out would have exempted Dependabot rather than deadlocking it.
+The sentence read as settled reasoning and had no instrument behind it. The correction is in place
+below, alongside a new _What a required context guarantees_ section that states which conclusions
+pass, which of those are measured here, and which are not measurable at all.
 
 Decisions are immutable history, so the hotfix clause is left standing below and read as history,
 along with the Bad consequence that follows from it ("hotfixes must be back-merged promptly"), which
@@ -41,14 +39,14 @@ ADR is amended, not superseded, and everything else in it stands.
 
 ## Context
 
-openrunic needs a branching model that supports continuous integration of many small PRs (from
-humans and coding agents alike) while keeping a stable, releasable branch. It also needs branch
+openrunic needs a branching model that supports continuous integration of many small PRs while
+keeping a stable, releasable branch. It also needs branch
 protection that does not have to be reconfigured every time the CI matrix changes shape, since the
 CI pipeline (sharded tests, scanners) will evolve quickly during the scaffold phase.
 
-The YosemiteCrew organization runs the same model on Yosemite Crew and has already paid for the
-lessons: required-check lists that name individual jobs go stale the moment jobs are renamed or
-resharded, and classic branch protection is less expressive and harder to audit than rulesets.
+Two lessons shape it: required-check lists that name individual jobs go stale the moment jobs are
+renamed or resharded, and classic branch protection is less expressive and harder to audit than
+rulesets.
 
 ## Decision
 
@@ -89,8 +87,7 @@ Protection and gating:
     repository, and each enforced it by being read.
   - `Synthetic data only` (`phi-guard.yml`).
   - `Storybook Required` (`storybook.yml`) and `Supply Chain Required` (`supply-chain.yml`). Both
-    were written as aggregates _to be_ required and their own comments said they were. Supply
-    Chain has been required on Yosemite Crew since before this.
+    were written as aggregates _to be_ required and their own comments said they were.
   - `Scan infrastructure files (Trivy config + Compose guard)` (`iac-scan.yml`),
     `Review dependency changes` (`dependency-review.yml`),
     `Audit workflow security (zizmor)` (`workflow-audit.yml`) and
@@ -103,8 +100,7 @@ Protection and gating:
     `Analyze (javascript-typescript)` and there is **no job whose `name:` produces `CodeQL`**.
     That context is the Code Scanning aggregate, posted by the Advanced Security app once the
     analyses upload, and it is the one that carries the verdict: on #409 the two `Analyze` legs
-    were `success` while `CodeQL` was `failure`, on a `high` severity `js/redos` alert in a
-    regular expression added by that pull request.
+    were `success` while `CodeQL` was `failure`.
 
     An earlier version of this document excluded "CodeQL" by naming the two `Analyze` legs and
     citing #283 as holding it unrequired on purpose. Both halves were wrong: the legs are not the
@@ -189,88 +185,25 @@ request` - the forbidden-terms work, merged, and required here as of the same ch
   pattern that makes a check unpromotable, so it is worth checking per workflow rather than
   assuming either way.
 
-  Read the live lists with
-  `gh api repos/YosemiteCrew/openrunic/rulesets/<id> --jq '.rules[]|select(.type=="required_status_checks")|.parameters.required_status_checks[].context'`
-  rather than trusting this sentence - it has been stale before. The exception to the single-aggregate
-  rule is deliberately narrow: a check earns its own entry only when the aggregate is structurally
-  incapable of covering it, never because a job feels important enough to name.
+  Read the live lists from the rulesets rather than trusting this sentence - it has been stale
+  before. The exception to the single-aggregate rule is deliberately narrow: a check earns its own
+  entry only when the aggregate is structurally incapable of covering it, never because a job feels
+  important enough to name.
 
 - Branch protection is implemented with **repository rulesets**, not classic branch protection:
   rulesets are auditable, exportable as JSON, and can layer.
-
-  **They do not apply to admins here, and an earlier version of this sentence said they did.**
-  Both rulesets carry a bypass, present on every version since the first on 2026-08-12:
-
-  ```
-  rules/branches/dev    bypass_actors  [RepositoryRole 5, bypass_mode: always]
-  rules/branches/main   bypass_actors  [OrganizationAdmin always, RepositoryRole 5 always]
-  ```
-
-  Role 5 is repository admin, and both accounts that merge here hold it. It is not theoretical:
-  `rulesets/rule-suites?ref=refs/heads/dev` is GitHub's own evaluation record, and in a
-  twenty-four hour window it showed **3 of 49 pushes with `result: bypass`** - one over
-  `Required status check "CI Required" is expected`, two over the approving-review requirement.
-  The other 46 are `pass`, so the field is not defaulting. **Every count of this window below is an
-  as-of reading of a set that grows** - 49 rows here, 51 an hour later, 178 then 180 unfiltered, all
-  taken on 2026-09-07. Nine lines apart a reader cannot otherwise tell growth from a mistake, in a
-  section whose subject is a window that moves.
-
-  That endpoint keeps a bounded window, so 3 is a floor rather than a total. **The bound is a span
-  that was measured, not a cap that was observed to fire:** two reads ninety seconds apart across
-  two merges went from 178 rows to 180 with the oldest row unchanged, so nothing has been seen to
-  drop and time-cap and count-cap are not separated here. The units decide what the number means -
-  under a count cap a busy hour retires a row and the clock says nothing about it. **`ref=` is a
-  view on one window rather than a per-ref window:** `ref=refs/heads/dev` returned 49 rows and the
-  unfiltered 178-row window contained the same 49, so a row's survival is priced in pushes to every
-  ref, not its own branch's traffic.
-
-  **Do not read this endpoint with `gh api --paginate`, and the reason is the endpoint rather than
-  the flag.** Its page-1 `Link` header advertises `rel="next"` pointing at **`page=1`** - itself -
-  where a correct one points at `page=2`, so a paginated read re-emits the first page and inflates
-  every count taken from it. Same result set, only `per_page` changed:
-
-  ```
-  ?ref=refs/heads/dev --paginate per_page=100  1 page    51 rows · 51 distinct
-                                                bypass rows 3 · bypass ids 3
-  ?ref=refs/heads/dev --paginate per_page=50   2 pages  101 rows · 51 distinct
-                                                bypass rows 5 · bypass ids 3   <- the diagnosis
-  CONTROL  labels --paginate per_page=5, 4 pages          16 rows · 16 distinct · no repeat
-  ```
-
-  `bypass rows 5` beside `bypass ids 3` is the whole diagnosis in two numbers: it separates _five
-  bypasses_ from _three bypasses counted twice_, which is the reading the inflation produces and the
-  one a reader would otherwise act on. The control matters too: `--paginate` is not broken generally,
-  and the second row is this ADR's own headline number reading `5 of 51` instead of `3 of 51` from a
-  flag alone. Read it with explicit
-  `page=` and deduplicate by `id`. There is no `total_count` on this endpoint to catch it with.
-
-  **The trigger is `rows > per_page`, and the duplication is bounded rather than a loop.** A
-  complete single page carries **no `Link` header at all**, and page two carries `rel="first"` and
-  `rel="prev"` but no `rel="next"` - so only the first hop is wrong, page one is emitted exactly
-  twice and the read terminates normally. That is the dangerous shape rather than the harmless one:
-  a hang gets noticed, and a read that returns promptly with 56% more rows than exist does not.
-
-  Its `pushed_at` is also the one GitHub time that is **not** `Z` - it carries a local offset, as
-  does `rulesets/{id}/history`. Truncating either to nineteen characters silently converts a local
-  time into a false UTC.
-
-  The bypass is deliberately retained for now: it is the only recovery path from a ruleset write
-  that deadlocks the branch, which has happened. Removing it is an owner's decision, not a
-  cleanup, and it is tracked in #411. Until then, **sixteen required contexts on `dev` are a
-  strong default and not an enforced boundary**, and any statement that a gate "cannot be
-  merged past" is wrong as written.
 
 ### What a required context guarantees
 
 Enumerating required contexts measures the list, not the enforcement. Three conclusions and one
 absence decide what "required" buys, and only two of the four are measured here:
 
-| the context ...     | effect on the merge | status                                                                    |
-| ------------------- | ------------------- | ------------------------------------------------------------------------- |
-| concludes `success` | passes              | measured, continuously                                                    |
-| concludes `skipped` | **passes**          | **measured**, #412, this ruleset, 2026-09-07                              |
-| concludes `neutral` | passes              | **inferred** - see the bound below                                        |
-| never posts at all  | **fails the rule**  | measured; whether it blocks the _merge_ depends on the bypass - see below |
+| the context ...     | effect on the merge | status                                       |
+| ------------------- | ------------------- | -------------------------------------------- |
+| concludes `success` | passes              | measured, continuously                       |
+| concludes `skipped` | **passes**          | **measured**, #412, this ruleset, 2026-09-07 |
+| concludes `neutral` | passes              | **inferred** - see the bound below           |
+| never posts at all  | **fails the rule**  | measured - see below                         |
 
 `skipped` was settled by manufacturing it: a throwaway pull request gave one required job a
 never-true event condition, and with the other fifteen `success` and that one `skipped`,
@@ -279,32 +212,9 @@ moment the review was dismissed. Controls: a fully green pull request reaching `
 ruleset the same day, the dismissal as a reversibility arm, and a context name nothing reports
 returning zero rows.
 
-**The blocking row is weaker than it looks and the distinction is the table's whole value.** The
-evidence is #258's rule evaluation, recorded `FAIL` with
-`Required status check "CI Required" is expected` - so what is measured is that the **rule** fails
-when a required context never posts. #258 then **merged**, over that failed rule, on the admin
-bypass described above. So "never posts blocks the merge" holds only where nobody uses the bypass,
-and this repository has no instance of a merge actually being stopped by it. Read the row as: the
-rule fails, and the bypass decides whether that is the end of the matter.
-
-**That evaluation is addressable by id, and the list does not contain it.** The row lives at
-`rulesets/rule-suites/3963149730`; the listing it came from carries ten fields, **none of them a
-rule evaluation**, and its verdict is `bypass`:
-
-```
-LIST    id · actor_id · actor_name · before_sha · after_sha · ref · repository_id ·
-        repository_name · pushed_at · result=bypass          no rule_evaluations key
-DETAIL  rulesets/rule-suites/3963149730
-          evaluation_result null · result bypass
-          rule_evaluations[0]  result=fail
-            details "Required status check \"CI Required\" is expected."
-```
-
-`bypass` says the push landed; it does not say the rule failed. So a reader re-deriving this claim
-from the window gets a row that **agrees with the conclusion while carrying none of the evidence** -
-which is worse than an expired window, because an empty result is legibly empty and an agreeing row
-is not. The id is recorded here for that reason, and because whether the detail outlives the listing
-can only be tested with an id captured before it leaves.
+**The blocking row is measured on the rule.** A rule evaluation records `FAIL` with
+`Required status check "CI Required" is expected` when a required context never posts, so what is
+measured is that the **rule** fails in that case.
 
 **`ABSENT` has no transient form, and the two readings are far apart.** `mergeStateStatus` says
 `BLOCKED` both for a required context whose producing workflow is still running and for one that
@@ -343,28 +253,19 @@ so it must never be a verdict.
 non-terminal states, and GitHub documents others (`waiting`, `requested`, `pending`); a run in any
 of them would read permanent under an allowlist.
 
-**A census cannot settle this, and finding that out is the reason the rule is a complement.** Two
-desks swept every workflow run this repository has ever produced - 11,238 rows on both, matching
-`total_count` - minutes apart:
-
-```
-sweep A   completed 11236 · in_progress 2
-sweep B   completed 11237 · queued      1
-```
-
-Same population, different answer, and neither `in_progress` nor `queued` appears in the other.
-**A run's non-terminal status exists only while the run is in flight**, so a sweep of eleven
-thousand rows enumerates the terminal state and _samples_ every other one - it has the denominator
-of a census and the reach of whatever happened to be running at that instant. Neither sweep saw
-`waiting`, `requested` or `pending`, and neither could have unless one was live as it read.
+**A census cannot settle this, and finding that out is the reason the rule is a complement.**
+**A run's non-terminal status exists only while the run is in flight**, so a sweep of every run this
+repository has produced enumerates the terminal state and _samples_ every other one - it has the
+denominator of a census and the reach of whatever happened to be running at that instant. Two
+sweeps minutes apart return different non-terminal states, and neither sees `waiting`, `requested`
+or `pending` unless one is live as it reads.
 
 So the rule is `status != "completed"` because the set it would otherwise have to list is not
 knowable from this endpoint at any sample size - not merely because no instance has turned up.
 
 `head_sha` needs all forty characters; a short sha silently returns `total_count: 0` with no error,
 which is the same false permanent by a second route - one about timing and one about the query, and
-both failing toward _edit a ruleset_. (Measured independently on a sibling repository, where ten
-merge commits queried with nine-character shas returned a uniform, plausible "no CI run".)
+both failing toward _edit a ruleset_.
 
 One assumption worth naming, because it is currently true and need not stay so: **one run per
 workflow per head**, so _the producing run_ is unambiguous. On this document's own head all fifteen
@@ -449,17 +350,14 @@ what this section is for.
 
 `CodeQL`, `GitGuardian Security Checks` and `Aikido Security: check code` have no job in this
 repository. Two of them - GitGuardian and Aikido - depend on no workflow here at all, so their
-silence modes are entirely external: an app disabled, uninstalled, or out of credits. `Aikido
-Security: check code` is protection rather than decoration and has posted `failure` on real
-findings repeatedly, most recently on #413 (2026-09-07, a `MEDIUM` path traversal in a script
-added by that pull request, fixed rather than suppressed) - a running count is left out of this
-document deliberately, because it is a number somebody then has to keep; its sibling `Aikido Deep Review` has been `skipped` for want of credits on every
-run since the app was installed, which is #408.
+silence modes are entirely external: an app disabled or uninstalled. `Aikido Security: check code`
+is protection rather than decoration and has posted `failure` on real findings repeatedly - a
+running count is left out of this document deliberately, because it is a number somebody then has
+to keep.
 
-Fixing #408 narrowed this class rather than leaving it as stated above: the credits are still an
-owner action and still unconfigurable from here, but **whether the app reviewed a head is now readable from this
-repository.** `aikido-coverage.yml` reads the check runs the app posted and fails when one of them
-declined, so the app side of Aikido's silence is detectable even though it is not controllable.
+`aikido-coverage.yml` narrows this class for Aikido: **whether the app reviewed a head is readable
+from this repository.** It reads the check runs the app posted and fails when one of them declined,
+so the app side of Aikido's silence is detectable even though it is not controllable from here.
 GitGuardian is the remaining context in this class with neither.
 
 `CodeQL` is the fourth class and the one worth naming separately: **posted by an app _and_
@@ -484,8 +382,6 @@ way for the required context to keep meaning what it says.
   moving a scanner between legs) never requires a settings change, and a green "CI Required" has a
   single unambiguous meaning.
 - Rulesets give reviewable, versionable protection configuration.
-- The model is identical to Yosemite Crew's, so contributors and agents working across both
-  organizations follow one set of habits.
 
 ### Bad
 
@@ -504,8 +400,8 @@ way for the required context to keep meaning what it says.
 
 ## Alternatives considered
 
-- **Trunk-based (main only)**: every PR targets `main`. Rejected for now: with parallel agent
-  workstreams and a pre-alpha CI matrix still stabilizing, an integration buffer is worth more
+- **Trunk-based (main only)**: every PR targets `main`. Rejected for now: with many concurrent
+  changes and a pre-alpha CI matrix still stabilizing, an integration buffer is worth more
   than the simpler topology. Revisit once releases and release branches exist.
 - **Git flow (release + hotfix + develop branches)**: rejected as heavier than needed; we take
   only the dev/main split and skip release branches until there is something to release.

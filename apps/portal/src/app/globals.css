@@ -970,6 +970,12 @@ output {
   color: var(--text-secondary);
 }
 
+.portal-assistant-help {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
 .portal-assistant__turns {
   list-style: none;
   margin: 0;

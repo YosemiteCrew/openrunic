@@ -3,22 +3,25 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { hidePage, showPage } from './visibility.js';
 import { speakableTurns } from '../readback.js';
 import { useReadback } from '../useReadback.js';
+import { createHostedReadback } from '../hosted-readback.js';
+import type { PlaybackHandlers } from '../hosted-readback.js';
 import type { ReadbackEvent, ReadbackPort, Utterance } from '../ports.js';
 
 /**
- * One contract, two adapters that share nothing but it.
+ * One contract, three adapters that share nothing but it.
  *
  * The claim this file exists to check is that replacing the voice is an adapter
  * change: no rule about what may be read aloud lives in one. So every case
- * below runs twice, against two deterministic doubles - labelled as doubles,
- * because neither is a real synthesiser and no paid service is contacted here.
+ * below runs three times: against two deterministic doubles, and against the
+ * shipped hosted adapter over a scripted synthesiser. None is a real voice and
+ * no paid service is contacted here.
  *
  * They are built to be unalike in the way that matters. The first is a
  * one-shot text-to-speech stage, called once per answer, which suppresses its
  * own events after a cancel. The second is a duplex session with its own event
  * vocabulary and a queue, which does **not** suppress anything: it reports an
  * ending for an utterance that was already cancelled, exactly as a browser
- * does. Both must produce the same answer, and the second is the one that shows
+ * does. All must produce the same answer, and the second is the one that shows
  * the core is doing the work rather than the adapter being polite.
  */
 
@@ -141,6 +144,67 @@ function duplexSession(): Double {
 }
 
 /**
+ * The shipped hosted adapter, over a scripted synthesiser rather than a service.
+ *
+ * The script is as badly behaved as an audio element: stopping a playback
+ * reports it finished, synchronously. And its reports carry no id at all - the
+ * synthesiser is never told one - so the only way this double can produce an
+ * ending nobody is waiting on is the way a real one does: a playback that was
+ * already replaced reporting late.
+ */
+function hostedSynthesiser(): Double {
+  const said: Utterance[] = [];
+  const handlers = new Map<string, PlaybackHandlers>();
+  let queued: string | null = null;
+  let cancels = 0;
+
+  const adapter = createHostedReadback(
+    {
+      languages: ['en-GB'],
+      play: (_speech, playback) => {
+        const id = queued ?? 'unrequested';
+        handlers.set(id, playback);
+        playback.started();
+        return { stop: () => playback.finished() };
+      },
+    },
+    { endpoint: 'the configured voice endpoint', agreement: 'a named agreement for tests' }
+  );
+  if (adapter === null) throw new Error('unreachable: a synthesiser was supplied');
+
+  /* The stale playback, made before anything is counted. */
+  queued = 'an-utterance-nobody-asked-for';
+  adapter.speak({ id: queued, text: 'An earlier answer.', language: 'en-GB' });
+  adapter.cancel();
+
+  const report = (kind: 'finished' | 'failed') => (id: string) => {
+    handlers.get(id)?.[kind]();
+  };
+
+  return {
+    said,
+    cancels: () => cancels,
+    port: {
+      ...adapter,
+      speak: (utterance) => {
+        said.push(utterance);
+        queued = utterance.id;
+        adapter.speak(utterance);
+      },
+      cancel: () => {
+        cancels += 1;
+        adapter.cancel();
+      },
+    },
+    finish: report('finished'),
+    fail: report('failed'),
+    ghost: () => {
+      handlers.get('an-utterance-nobody-asked-for')?.finished();
+    },
+  };
+}
+
+/**
  * A turn, as little of one as the hook is allowed to know.
  *
  * The hook is generic over this on purpose: it is handed an id and a rule, and
@@ -220,6 +284,7 @@ function drive(port: ReadbackPort) {
 describe.each([
   ['a one-shot text-to-speech stage', oneShot],
   ['a duplex session with its own event names', duplexSession],
+  ['the hosted adapter over a scripted synthesiser', hostedSynthesiser],
 ] as const)('%s', (_name, build) => {
   let double: Double;
 
@@ -455,7 +520,7 @@ describe.each([
     });
     expect(result.current.state.ended).toBe('failed');
 
-    /* Both doubles speak `en-GB` and nothing else, so a page in another
+    /* Every double speaks `en` and not `pl`, so a page in another
        language is a voice that cannot read it - the control stays drawn, with
        its own sentence about why. */
     rerender({ turns: ONE_ANSWER, language: 'pl' });

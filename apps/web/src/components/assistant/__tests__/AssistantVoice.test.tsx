@@ -49,6 +49,7 @@ const CAPABILITIES: AgentCapabilities = {
       approval: 'never',
     },
   ],
+  dictation: null,
 };
 
 const ENABLED: AgentAvailability = { status: 'enabled', capabilities: CAPABILITIES };

@@ -1,3 +1,5 @@
+import { readRealtimeCredential } from '@openrunic/voice';
+import type { RealtimeCredential, RealtimeMint } from '@openrunic/voice';
 import { API_MODE } from '@/lib/api';
 import { SESSION_FETCH_HEADER, SESSION_FETCH_MARKER } from '@/lib/auth/routes';
 
@@ -55,6 +57,7 @@ const ABSENT: AssistantAvailability = { status: 'absent' };
 
 const CAPABILITIES_PATH = '/bff/v0/agent/tools';
 const TURNS_PATH = '/bff/v0/agent/turns';
+const REALTIME_PATH = '/bff/v0/agent/realtime/sessions';
 
 function headers(transport: AssistantTransport, accept: string): Record<string, string> {
   const authorization = transport.authorization?.();
@@ -90,6 +93,31 @@ export async function probeAssistant(
   } catch {
     return ABSENT;
   }
+}
+
+/**
+ * Asks the API for a short-lived dictation credential, through the portal's
+ * own proxy like every other call.
+ *
+ * Told the language and nothing else. The session is bound to the reader's own
+ * record already, so naming it would add nothing, and the service that
+ * transcribes is never told whose record it is. Rejects on anything other than
+ * a whole credential, which reads to the reader as a microphone that stopped.
+ */
+export async function mintRealtimeSession(
+  transport: AssistantTransport,
+  language: string,
+  signal: AbortSignal
+): Promise<RealtimeCredential> {
+  const doFetch = transport.fetchImpl ?? fetch;
+  const response = await doFetch(`${transport.baseUrl}${REALTIME_PATH}`, {
+    method: 'POST',
+    headers: { ...headers(transport, 'application/json'), 'content-type': 'application/json' },
+    body: JSON.stringify({ language }),
+    signal,
+  });
+  if (!response.ok) throw new Error('No dictation session was issued.');
+  return readRealtimeCredential(await response.json());
 }
 
 /**
@@ -189,6 +217,10 @@ export const defaultProbe: ProbeAssistant = (signal) =>
   IS_MOCK_MODE ? Promise.resolve(ABSENT) : probeAssistant(DEFAULT_TRANSPORT, signal);
 
 export const defaultRunTurn: RunTurn = (request) => streamTurn(DEFAULT_TRANSPORT, request);
+
+/** Asks for a dictation credential. Only called when the API named a service. */
+export const defaultMintRealtime: RealtimeMint = (language, signal) =>
+  mintRealtimeSession(DEFAULT_TRANSPORT, language, signal);
 
 function safeParse(payload: string): unknown {
   try {

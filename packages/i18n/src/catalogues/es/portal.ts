@@ -348,6 +348,12 @@ export const portal: Messages = {
   'portal.assistant.compose.placeholder': '¿Qué anotó la consulta sobre mi última visita?',
   'portal.assistant.compose.ask': 'Preguntar',
   'portal.assistant.compose.stop': 'Parar',
+  'portal.assistant.help.visits.lead': '¿Tiene una pregunta sobre sus citas?',
+  'portal.assistant.help.visits.link': 'Pregunte al asistente sobre sus citas',
+  'portal.assistant.help.visits.question': '¿Cuándo es mi próxima cita y para qué es?',
+  'portal.assistant.help.bills.lead': '¿Tiene una pregunta sobre sus facturas?',
+  'portal.assistant.help.bills.link': 'Pregunte al asistente sobre sus facturas',
+  'portal.assistant.help.bills.question': '¿Qué me queda por pagar y a qué visitas corresponde?',
 
   'portal.assistant.readback.label': 'Leer las respuestas en voz alta',
   'portal.assistant.readback.hint':
@@ -365,6 +371,10 @@ export const portal: Messages = {
   'portal.assistant.dictation.stop': 'Apagar el micrófono',
   'portal.assistant.dictation.hint':
     'Su dispositivo convierte su voz en texto en el propio dispositivo, y no se envía nada a ningún sitio para hacerlo. Las palabras van al cuadro de arriba, donde puede cambiarlas, y no se pregunta nada hasta que pulse Preguntar.',
+  'portal.assistant.dictation.hintHosted':
+    'El botón del micrófono envía lo que diga a {host} para convertirlo en texto, según {agreement}, y no se envía nada hasta que lo pulse. Las palabras van al cuadro de arriba, donde puede cambiarlas, y no se pregunta nada hasta que pulse Preguntar.',
+  'portal.assistant.dictation.noLanguageHosted':
+    'El servicio de voz que usa su consulta no escribe en el idioma de esta página, así que aquí solo puede escribir.',
   'portal.assistant.dictation.starting': 'Abriendo el micrófono.',
   'portal.assistant.dictation.listening':
     'El micrófono está encendido. Sus palabras van al cuadro de arriba.',

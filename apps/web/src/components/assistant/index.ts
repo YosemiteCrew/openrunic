@@ -3,6 +3,9 @@ export type { AssistantComposerProps } from './AssistantComposer';
 export { AssistantLauncher } from './AssistantLauncher';
 export { ASSISTANT_PANEL_ID, AssistantPanel } from './AssistantPanel';
 export type { AssistantPanelProps } from './AssistantPanel';
+export { ASSISTANT_DICTATION_MESSAGES, AssistantDictation } from './AssistantDictation';
+export type { AssistantDictationProps, DictationMessages } from './AssistantDictation';
+
 export { AssistantReadback } from './AssistantReadback';
 export type { AssistantReadbackProps } from './AssistantReadback';
 export { AssistantProvider, useAssistant } from './AssistantProvider';
@@ -29,7 +32,7 @@ export type {
   TurnOutcome,
   WithheldReason,
 } from './transcript';
-export { defaultProbe, defaultRunTurn } from './transport';
+export { defaultMintRealtime, defaultProbe, defaultRunTurn } from './transport';
 export type { ProbeAssistant, RunAgentTurn } from './transport';
 export { useConversation } from './useConversation';
 export type { Conversation } from './useConversation';

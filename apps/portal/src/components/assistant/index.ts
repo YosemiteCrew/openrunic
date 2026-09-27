@@ -13,6 +13,11 @@ export type { AssistantContextValue, AssistantProviderProps } from './AssistantP
 export { AssistantComposer } from './AssistantComposer';
 export type { AssistantComposerProps } from './AssistantComposer';
 
+export { AssistantHelp } from './AssistantHelp';
+export type { AssistantHelpProps } from './AssistantHelp';
+export { helpHref, helpQuestionKey, helpTopicFrom, helpTopicGranted } from './help';
+export type { HelpTopic } from './help';
+
 export { AssistantDictation } from './AssistantDictation';
 export type { AssistantDictationProps } from './AssistantDictation';
 
@@ -58,14 +63,12 @@ export type {
 export { useConversation } from './useConversation';
 export type { Conversation } from './useConversation';
 
-export { IDLE, appendDictation, dictationReducer } from './dictation';
+export { IDLE, appendDictation, dictationReducer, useDictation } from '@openrunic/voice';
 export type {
   DictationAction,
   DictationEnding,
   DictationPhase,
   DictationSession,
+  Dictation,
   DictationState,
-} from './dictation';
-
-export { useDictation } from './useDictation';
-export type { Dictation } from './useDictation';
+} from '@openrunic/voice';

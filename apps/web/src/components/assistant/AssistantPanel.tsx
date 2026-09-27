@@ -2,8 +2,13 @@
 
 import { formatCount } from '@openrunic/i18n';
 import { IconButton } from '@openrunic/ui';
-import { createPlatformReadback, speakableTurns, useReadback } from '@openrunic/voice';
-import type { ReadbackPort } from '@openrunic/voice';
+import {
+  chooseCapture,
+  createPlatformReadback,
+  speakableTurns,
+  useReadback,
+} from '@openrunic/voice';
+import type { BrowserMedia, CapturePort, ReadbackPort, RealtimeMint } from '@openrunic/voice';
 import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useRef } from 'react';
 import type { ReactElement } from 'react';
@@ -18,6 +23,7 @@ import { AssistantReadback } from './AssistantReadback';
 import { AssistantTurnView } from './AssistantTurn';
 import { speakableAnswer } from './readback';
 import { announcementFor } from './transcript';
+import { defaultMintRealtime } from './transport';
 import { useConversation } from './useConversation';
 
 /**
@@ -49,9 +55,29 @@ export interface AssistantPanelProps {
    * deployment that turned readback off would pass.
    */
   readback?: ReadbackPort | null;
+  /**
+   * The microphone a question can be spoken into. Absent means the hosted
+   * service the API named, when it named one and this browser can reach it, and
+   * otherwise the device's own on-device recogniser, which is nothing at all
+   * where the browser cannot promise the audio stays on the device; `null` is a
+   * caller saying there is none.
+   */
+  capture?: CapturePort | null;
+  /**
+   * Asks the API for a hosted dictation credential. Only used when the API
+   * named a transcription service; injected in tests.
+   */
+  mintRealtime?: RealtimeMint;
+  /** The browser's microphone, peer connection and fetch. Injected in tests. */
+  realtimeMedia?: BrowserMedia | null;
 }
 
-export function AssistantPanel({ readback }: Readonly<AssistantPanelProps>): ReactElement | null {
+export function AssistantPanel({
+  readback,
+  capture,
+  mintRealtime = defaultMintRealtime,
+  realtimeMedia,
+}: Readonly<AssistantPanelProps>): ReactElement | null {
   const t = useTranslator();
   const { availability, capabilities, isOpen, close, runTurn } = useAssistant();
   const pathname = usePathname();
@@ -79,6 +105,19 @@ export function AssistantPanel({ readback }: Readonly<AssistantPanelProps>): Rea
     if (!onScreen) return null;
     return readback === undefined ? createPlatformReadback() : readback;
   }, [onScreen, readback]);
+
+  /* The microphone needs no gate like the voice's. It is owned by the composer,
+     which is not rendered while the panel is closed, and unmounting it is the
+     path that already aborts an open session - so a dismissed panel cannot be
+     listening. */
+  const dictation = capabilities?.dictation ?? null;
+  const microphone = useMemo(
+    () =>
+      capture === undefined
+        ? chooseCapture(dictation, mintRealtime, realtimeMedia)
+        : { port: capture, egress: null },
+    [capture, dictation, mintRealtime, realtimeMedia]
+  );
 
   /* The rule runs here, beside the rule about what this surface will show. What
      reaches the voice is a turn id and the string on screen, and nothing that
@@ -207,6 +246,9 @@ export function AssistantPanel({ readback }: Readonly<AssistantPanelProps>): Rea
         onAsk={ask}
         onStop={stop}
         fieldRef={fieldRef}
+        chartPatientId={chartPatientId ?? ''}
+        capture={microphone.port}
+        dictationEgress={microphone.egress}
       />
     </aside>
   );

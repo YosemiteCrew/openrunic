@@ -1,8 +1,10 @@
 'use client';
 
+import { useMemo } from 'react';
+
 import { api } from './api';
 import { API_MODE } from './config';
-import { queryKey, useApiQuery } from './hooks';
+import { queryKey, useApiQuery, useOwnCapabilities } from './hooks';
 import type { AsyncState } from './hooks';
 import {
   MOCK_INBOX_ITEMS,
@@ -12,8 +14,21 @@ import {
   MOCK_PATIENT_PROBLEMS,
   MOCK_RESULTS,
 } from './mock/fixtures';
+import { MOCK_ACTING_USER } from './mock/records';
 import { paginate } from './pagination';
-import type { ApiClient, ListResponse, PaginationQuery, ServiceRequestDto } from './types';
+import type {
+  ApiClient,
+  DiagnosticReportDto,
+  DiagnosticReportListQuery,
+  ListResponse,
+  PaginationQuery,
+  PrincipalCapabilities,
+  ResultObservationDto,
+  ServiceRequestDto,
+  TaskDto,
+  TaskKind,
+  TaskListQuery,
+} from './types';
 
 /**
  * Orders, results and the typed inbox.
@@ -249,13 +264,32 @@ export interface ResultAnalyte {
   label: string;
   /** Null when the lab reported the analyte without a value. */
   value: number | null;
-  unit: string;
+  /**
+   * Null when the lab reported no unit, which a qualitative analyte - a
+   * culture, a presence - legitimately does. Nullable rather than `''` so the
+   * reading pane can tell "no unit" from "a unit nobody filled in".
+   */
+  unit: string | null;
   /** Reference bounds; either end may be open. */
   low?: number;
   high?: number;
   decimals?: number;
   /** Newest first, at most three. */
   previous?: PriorValue[];
+  /**
+   * What the laboratory reported in words or as a code where it reported no
+   * number - a culture, a presence. A reading like this has a value; showing it
+   * as "not recorded" would say the laboratory reported nothing.
+   */
+  text?: string | null;
+  /** The laboratory's reference in words, for one that is not two bounds: "Negative". */
+  rangeText?: string | null;
+  /**
+   * The laboratory's own flag on this analyte. A reading in words has no bounds
+   * to be measured against, so this is the only statement of whether it is
+   * normal.
+   */
+  flag?: ResultFlag;
 }
 
 export interface ResultReport {
@@ -265,25 +299,170 @@ export interface ResultReport {
   /** "Comprehensive metabolic panel", "Chest X-ray, two views". */
   panel: string;
   category: OrderCategory;
-  /** ISO instant. */
-  collectedAt: string;
+  /** ISO instant, null when no specimen collection time was recorded. */
+  collectedAt: string | null;
   /** ISO instant. */
   reportedAt: string;
   flag: ResultFlag;
   status: ResultStatus;
-  performer: string;
-  orderedBy: string;
-  assignedTo: Assignment;
+  /** The laboratory, null when the report names none. */
+  performer: string | null;
+  /**
+   * The ordering clinician's id, null when the report has no service request
+   * behind it - and null on every live row until that join lands (#535).
+   */
+  orderedBy: string | null;
+  /**
+   * Who signed the report off, as recorded: `reviewedById` on a live row.
+   *
+   * Null while it is unsigned, and on a signed report that names nobody. Not
+   * `orderedBy`: the clinician who asked for a test and the one who signed its
+   * result are two facts, and the pane that says "Signed by" names this one.
+   */
+  signedBy: string | null;
+  /**
+   * Whose queue this sits in, null where nothing records it.
+   *
+   * Assignment is a `Task` fact - `assigneeType`, `assigneeUserId`,
+   * `assigneeTeamKey`, over the `RESULT` stream - and not a column on the
+   * report, so a live row reads null. The queue can still be narrowed to a
+   * person or the pool: {@link liveResults} asks the task collection the
+   * question and names the reports it answers with. Serving the value per row
+   * is a report-DTO change and waits for something that renders it.
+   *
+   * `reviewedById` is a different question: who signed it, not whose work it
+   * is.
+   */
+  assignedTo: Assignment | null;
+  /** Empty from a list: fetched per report, never per row. See {@link WorklistClient}. */
   analytes: ResultAnalyte[];
   /** Imaging and procedure reports read as prose rather than a value table. */
   narrative: string | null;
 }
 
-export interface ResultListQuery {
+/**
+ * A sign-off as it was recorded: when, by whom, and the note typed with it.
+ *
+ * `note` is only ever non-null from a client whose `notes` is true.
+ */
+export interface ResultSignature {
+  /** ISO instant. */
+  at: string;
+  /** The signer's staff id, null where the record names nobody. */
+  by: string | null;
+  /** The addendum a clinician typed while signing, when they typed one. */
+  note: string | null;
+}
+
+/**
+ * `PaginationQuery` for the same reason `OrderListQuery` carries it:
+ * `/bff/v0/results` paginates whether or not the caller says so, so a screen
+ * that could not spell the field could not ask for anything but the first 25
+ * (#539).
+ *
+ * `assignedTo` has no served field: the route carries no assignment filter,
+ * because assignment is not a column on the report. {@link liveResults} answers
+ * it with a second read rather than dropping it or sending something else.
+ */
+export interface ResultListQuery extends PaginationQuery {
   assignedTo?: Assignment;
   flag?: ResultFlag;
   status?: ResultStatus;
   patientId?: string;
+}
+
+/**
+ * One analyte, as the reading pane reads it.
+ *
+ * `decimals` and `previous` are absent rather than guessed: the observation DTO
+ * carries neither a display precision nor the prior values of the same analyte,
+ * and rendering 6.2 as 6.20 or an empty trend line would both be this layer
+ * inventing laboratory context. Open in #535.
+ */
+export function toResultAnalyte(dto: ResultObservationDto): ResultAnalyte {
+  return {
+    code: dto.code,
+    label: dto.display,
+    value: dto.valueNumber,
+    unit: dto.unit,
+    ...(dto.referenceLow === null ? {} : { low: dto.referenceLow }),
+    ...(dto.referenceHigh === null ? {} : { high: dto.referenceHigh }),
+    text: dto.valueText ?? dto.valueCode,
+    rangeText: dto.referenceRangeText,
+    flag: dto.abnormalFlag,
+  };
+}
+
+/**
+ * A diagnostic report as the sign-off queue reads it, or null when the queue
+ * has no word for what the row is.
+ *
+ * Same refusal as {@link toOrder} and for the same reason: `category` is a
+ * `SERVICE_REQUEST_CATEGORIES` on the wire and OR-01 fixes this surface to the
+ * three things a clinician orders, so a REFERRAL report is refused and counted
+ * rather than shown under a heading that is not its own.
+ *
+ * `status` is derived rather than read. The DTO's own `status` is a different
+ * axis - `DIAGNOSTIC_REPORT_STATUSES` is the laboratory's correction
+ * vocabulary, FINAL through CORRECTED - while this screen's is the sign-off
+ * one, and `reviewedAt` is what the `/review` transition sets. Reading the
+ * wrong one would show an amended report as unsigned work.
+ */
+export function toResultReport(dto: DiagnosticReportDto): ResultReport | null {
+  const category = viewValue(ORDER_CATEGORIES, dto.category);
+  if (category === undefined) return null;
+
+  return {
+    id: dto.id,
+    orderId: dto.serviceRequestId,
+    patientId: dto.patientId,
+    panel: dto.display,
+    category,
+    collectedAt: dto.effectiveAt,
+    reportedAt: dto.issuedAt,
+    flag: dto.abnormalFlag,
+    status: dto.reviewedAt === null ? 'UNREVIEWED' : 'SIGNED',
+    performer: dto.performingLabName,
+    signedBy: dto.reviewedById,
+    /* Neither is on the report: the ordering clinician is on the service
+       request one join away, and assignment is a `Task` fact. Null is the row
+       rather than a placeholder for it, and the screen renders both as absent. */
+    orderedBy: null,
+    assignedTo: null,
+    /* One `/results/{id}/observations` call per row would be N+1 on a list, so
+       the list does not fetch them and the reading pane does, for the one
+       report it is showing. */
+    analytes: [],
+    narrative: dto.narrative,
+  };
+}
+
+/**
+ * A page of reports, with the rows the queue refused counted rather than dropped.
+ *
+ * The same shape and the same argument as {@link OrderPage}: a clinician
+ * reading "25 results" above 22 rows cannot tell whether three are missing or
+ * three are elsewhere, so the difference travels with the page.
+ */
+export interface ResultPage extends ListResponse<ResultReport> {
+  /** Rows on this page the queue has no word for. Counted in `page.total`, absent from `data`. */
+  refused: number;
+  /**
+   * Assigned tasks past the one page of them the ME/TEAM filter reads, and so
+   * past anything this page could list. Counted as tasks, not results: two
+   * tasks can name one report, and a task can name something else, so the
+   * number is stated beside the total rather than added to it. Absent where
+   * the queue was not narrowed by assignment.
+   */
+  unlisted?: number;
+}
+
+/** One page of diagnostic reports, as the sign-off queue reads it. */
+export function toResultPage(response: ListResponse<DiagnosticReportDto>): ResultPage {
+  const data = response.data
+    .map(toResultReport)
+    .filter((report): report is ResultReport => report !== null);
+  return { data, page: response.page, refused: response.data.length - data.length };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -301,18 +480,26 @@ export interface InboxItem {
   patientId: string | null;
   /** The work, in one line. */
   summary: string;
-  /** The detail a disposition needs, without opening anything. */
-  detail: string;
+  /** The detail a disposition needs, without opening anything. Absent on a bare task. */
+  detail: string | null;
   /** ISO instant. */
   receivedAt: string;
-  /** ISO instant the practice promised itself. Drives the SLA chip. */
-  dueAt: string;
+  /**
+   * ISO instant the practice promised itself. Drives the SLA chip.
+   *
+   * Null where nobody promised anything. A task with no due date is not the
+   * most urgent one, so it sorts last and carries no chip rather than an
+   * invented one.
+   */
+  dueAt: string | null;
   assignedTo: Assignment;
-  unread: boolean;
-  /** The one action that finishes this item in the row: "Approve refill". */
-  actionLabel: string;
-  /** What the toast says once it is done: "Refill approved". */
-  doneLabel: string;
+  /**
+   * Null where this is not a fact the client can read.
+   *
+   * The API records no read receipt on a task, so a live row is neither unread
+   * nor read. `false` would be a claim that somebody has looked at it.
+   */
+  unread: boolean | null;
   /** Where the full context lives, when there is more to see. */
   href: string | null;
 }
@@ -337,7 +524,8 @@ const DUE_SOON_MINUTES = 240;
  * The label is the signal; the tone is decoration on top of it. That is the
  * colour-never-alone rule applied to the one chip a tired person scans for.
  */
-export function slaState(dueAt: string, now: string): SlaState {
+export function slaState(dueAt: string | null, now: string): SlaState {
+  if (dueAt === null) return 'ON_TIME';
   const minutes = (new Date(dueAt).getTime() - new Date(now).getTime()) / 60_000;
   if (Number.isNaN(minutes)) return 'ON_TIME';
   if (minutes < 0) return 'OVERDUE';
@@ -456,8 +644,53 @@ function page<T>(rows: T[]): ListResponse<T> {
 /** The read surface the three screens share. An HTTP client will satisfy it too. */
 export interface WorklistClient {
   orders: { list: (query?: OrderListQuery) => Promise<OrderPage> };
-  results: { list: (query?: ResultListQuery) => Promise<ListResponse<ResultReport>> };
-  inbox: { list: (query?: InboxListQuery) => Promise<ListResponse<InboxItem>> };
+  results: {
+    list: (query?: ResultListQuery) => Promise<ResultPage>;
+    /**
+     * The analytes of one report.
+     *
+     * Separate from `list` because fetching them per row is N+1 on a queue that
+     * exists to be scanned, and the one report open in the reading pane is the
+     * only one whose values are read.
+     *
+     * A `ListResponse` rather than an array, because this collection paginates
+     * too and a bare array cannot say that it is short: the reading pane is a
+     * clinician deciding on values, and a table missing rows it does not
+     * mention is the one shape this screen must not take.
+     */
+    analytes: (reportId: string) => Promise<ListResponse<ResultAnalyte>>;
+    /**
+     * Signs one report off and answers with the sign-off as recorded.
+     *
+     * Rejects when nothing was recorded, and the screen marks nothing signed
+     * until it resolves: a toast saying "signed" over a report the API still
+     * holds as unreviewed is the one thing this queue must not show. `now` is
+     * the instant a fixture client stamps; the API stamps its own.
+     */
+    sign: (report: ResultReport, note: string | null, now: string) => Promise<ResultSignature>;
+    /**
+     * Whether a sign-off can carry a note. The API's review records who and
+     * when and nothing typed, so a live client offers no note rather than
+     * accepting one it would drop.
+     */
+    notes: boolean;
+  };
+  inbox: {
+    list: (query?: InboxListQuery) => Promise<InboxPage>;
+    /**
+     * Whether this client can record the row's disposition.
+     *
+     * A row it cannot is offered no button, because a button that only moves
+     * the row off the screen tells the reader the work is done.
+     */
+    completes: (item: InboxItem) => boolean;
+    /** Records the row's disposition. Rejects when nothing was recorded. */
+    complete: (item: InboxItem) => Promise<void>;
+    /** Moves a pooled row to the reader, or null where the client cannot record that. */
+    claim: ((item: InboxItem) => Promise<void>) | null;
+    /** Puts a finished or claimed row back, or null where the client cannot. */
+    reopen: ((item: InboxItem) => Promise<void>) | null;
+  };
 }
 
 export interface WorklistData {
@@ -489,8 +722,29 @@ export function createWorklistClient(data: Partial<WorklistData> = {}): Worklist
           refused: 0,
         }),
     },
-    results: { list: (query) => Promise.resolve(page(filterResults(results, query))) },
-    inbox: { list: (query) => Promise.resolve(page(filterInbox(inbox, query))) },
+    /* Refused is zero by construction, as for orders above: these rows are
+       already `ResultReport`s and never went through `toResultReport`. */
+    results: {
+      list: (query) => Promise.resolve({ ...page(filterResults(results, query)), refused: 0 }),
+      analytes: (reportId) =>
+        Promise.resolve(page(results.find((report) => report.id === reportId)?.analytes ?? [])),
+      /* The demo's sign-off is its own record: the acting clinician, at the
+         instant the screen reads as now, with the note as typed. */
+      sign: (_report, note, now) => Promise.resolve({ at: now, by: MOCK_ACTING_USER, note }),
+      notes: true,
+    },
+    /* The fixture rows are the whole inbox and every one of them is typed, so
+       nothing is refused here. The field still travels: a screen reading it
+       only in live mode would be a screen nothing in the demo build exercises.
+       Every disposition is the screen's own state here, so every one is
+       offered and every one can be put back. */
+    inbox: {
+      list: (query) => Promise.resolve({ ...page(filterInbox(inbox, query)), refused: 0 }),
+      completes: () => true,
+      complete: () => Promise.resolve(),
+      claim: () => Promise.resolve(),
+      reopen: () => Promise.resolve(),
+    },
   };
 }
 
@@ -506,45 +760,349 @@ export function liveOrders(client: ApiClient): WorklistClient['orders'] {
 }
 
 /**
+ * `ResultListQuery` as `/bff/v0/results` can answer it.
+ *
+ * Three of the four view filters have a served field. `assignedTo` does not -
+ * `diagnosticReportListQuerySchema` carries no assignment filter, because
+ * assignment is not a column on the report - and it is never translated into
+ * the nearest thing, because the nearest thing is `reviewedById`, which answers
+ * who signed a result and not whose queue it is in. It arrives here already
+ * answered, as `ids`: see {@link liveResults}.
+ */
+export function toReportQuery(
+  query: ResultListQuery,
+  ids?: readonly string[]
+): DiagnosticReportListQuery {
+  return {
+    ...(ids === undefined ? {} : { ids }),
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.pageSize === undefined ? {} : { pageSize: query.pageSize }),
+    ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
+    ...(query.flag === undefined ? {} : { abnormalFlag: query.flag }),
+    ...(query.status === undefined ? {} : { reviewed: query.status === 'SIGNED' }),
+  };
+}
+
+/**
+ * The widest page `/results/{id}/observations` will serve.
+ *
+ * `MAX_PAGE_SIZE` in `apps/api/src/schemas/pagination.ts`; asking for more is
+ * rejected by the query schema rather than clamped. Asked for explicitly
+ * because the route's DEFAULT is 25, and a reading pane that took the default
+ * would render the first 25 analytes of a longer report as though they were all
+ * of them. The residual is still reported - see {@link WorklistClient} - since
+ * a panel longer than this is a fact about the laboratory, not one this layer
+ * gets to rule out.
+ */
+const ANALYTE_PAGE_SIZE = 100;
+
+/**
+ * The widest page of `RESULT` tasks the assignment question is asked over.
+ *
+ * `MAX_PAGE_SIZE` in `apps/api/src/schemas/pagination.ts`, and the same number
+ * {@link INBOX_PAGE_SIZE} asks the same route for. It bounds the narrowed
+ * queue: the report ids come from one page of tasks, so a clinician holding
+ * more than a hundred open results sees the first hundred. That is the same
+ * bound the inbox already renders under, on the same rows.
+ */
+const RESULT_TASK_PAGE_SIZE = 100;
+
+/**
+ * The assignment question, as `/bff/v0/tasks` can answer it.
+ *
+ * `inboxFor` alone is everything this user could act on; `assigneeType`
+ * narrows it to their own work or to the unclaimed pool, which is exactly the
+ * ME/TEAM split the sign-off queue offers. `type` is `RESULT` because a task
+ * about a report is the only kind whose subject can be one.
+ *
+ * `open` matters here in a way it does not on the inbox chips: a finished or
+ * cancelled task is nobody's work any more, and without this the ME queue
+ * would keep answering with it.
+ */
+function toResultTaskQuery(assignedTo: Assignment, userId: string): TaskListQuery {
+  return {
+    type: 'RESULT',
+    inboxFor: userId,
+    assigneeType: assignedTo === 'ME' ? 'USER' : 'TEAM',
+    open: true,
+    pageSize: RESULT_TASK_PAGE_SIZE,
+    sort: 'dueAt',
+    order: 'asc',
+  };
+}
+
+/**
+ * The reports a page of tasks is about, deduplicated.
+ *
+ * `subjectType` is checked rather than assumed. The column is a model name and
+ * nothing in the schema constrains it per task type, so a `RESULT` task
+ * pointing at something else would otherwise contribute a foreign id to a
+ * report query - which the route would answer with silence rather than an
+ * error, since a report id that matches nothing is simply a shorter page.
+ */
+function reportIdsOf(response: ListResponse<TaskDto>): readonly string[] {
+  const ids = new Set<string>();
+  for (const dto of response.data) {
+    if (dto.subjectType === 'DiagnosticReport' && dto.subjectId !== null) ids.add(dto.subjectId);
+  }
+  return [...ids];
+}
+
+/** A queue with nothing in it, for an assignment no task answered. */
+function noResults(pageSize: number): ResultPage {
+  return { data: [], page: { page: 1, pageSize, total: 0, totalPages: 0 }, refused: 0 };
+}
+
+/**
+ * The page, with the tasks past the one page of them that was read.
+ *
+ * The report ids come from one page of `RESULT` tasks, so a clinician holding
+ * more than {@link RESULT_TASK_PAGE_SIZE} open results sees the first page of
+ * them. The report read cannot know about the rest - they were never asked for
+ * - so without this the statement under the queue would read the shown rows as
+ * the whole of it. They are not added to the total: they are tasks nobody has
+ * matched to a report yet. See {@link ResultPage.unlisted}.
+ */
+function withUnlisted(results: ResultPage, tasks: ListResponse<TaskDto>): ResultPage {
+  const beyond = tasks.page.total - tasks.data.length;
+  return beyond > 0 ? { ...results, unlisted: beyond } : results;
+}
+
+/**
+ * The results half of {@link WorklistClient}, over `GET /bff/v0/results`.
+ *
+ * `userId` is the signed-in clinician, or null where the caller has no name -
+ * not staff, or `/bff/v0/me` not back yet. Only the assignment filter needs it,
+ * so an unnamed client still answers every other query; asked whose work a
+ * result is with no name to compare against, it answers with an empty queue
+ * rather than with everyone's, because the control says ME.
+ *
+ * The assignment path is two reads and that is deliberate. It is a filter, not
+ * a union: the task read decides which ids are asked for and the report read
+ * answers a subset of them, so a task claimed between the two can leave a row
+ * off the page but cannot duplicate one. The union case - the inbox - is one
+ * query for exactly that reason (#535).
+ */
+export function liveResults(client: ApiClient, userId: string | null): WorklistClient['results'] {
+  return {
+    list: async (query = {}) => {
+      if (query.assignedTo === undefined) {
+        return toResultPage(await client.results.list(toReportQuery(query)));
+      }
+      if (userId === null) return noResults(query.pageSize ?? RESULT_TASK_PAGE_SIZE);
+      const tasks = await client.tasks.list(toResultTaskQuery(query.assignedTo, userId));
+      const ids = reportIdsOf(tasks);
+      // Not a query worth sending: `ids` is refused empty by the route, and an
+      // absent `ids` would widen this to every result in the practice, which is
+      // the one answer a ME filter must never give.
+      if (ids.length === 0) {
+        return withUnlisted(noResults(query.pageSize ?? RESULT_TASK_PAGE_SIZE), tasks);
+      }
+      return withUnlisted(
+        toResultPage(await client.results.list(toReportQuery(query, ids))),
+        tasks
+      );
+    },
+    analytes: (reportId) =>
+      client.results
+        .listObservations(reportId, { pageSize: ANALYTE_PAGE_SIZE })
+        .then((response: ListResponse<ResultObservationDto>) => ({
+          data: response.data.map(toResultAnalyte),
+          page: response.page,
+        })),
+    /* `/review` records the signer from the credential and the time from its
+       own clock, and answers with the report as it now stands. */
+    sign: async (report, _note, now) => {
+      const reviewed = await client.results.review(report.id);
+      return { at: reviewed.reviewedAt ?? now, by: reviewed.reviewedById, note: null };
+    },
+    notes: false,
+  };
+}
+
+/* ---------------------------------------------------------------- the inbox */
+
+/**
+ * The typed stream a task belongs to, or null for work this inbox has no word
+ * for.
+ *
+ * Four of the nine task types are administrative - a fax, a document, a prior
+ * authorisation, a claim exception - and belong to the practice administrator's
+ * worklist (#475), not to a clinician's. Folding them into `TASKS` would put a
+ * claim exception in a clinician's inbox, which is the thing the five typed
+ * streams of C13 exist to prevent. They are refused and counted rather than
+ * renamed; see {@link InboxPage}.
+ */
+function toStream(type: TaskKind): InboxStream | null {
+  if (type === 'RESULT') return 'RESULTS';
+  if (type === 'MESSAGE') return 'MESSAGES';
+  if (type === 'REFILL') return 'REFILLS';
+  if (type === 'COSIGN') return 'COSIGN';
+  return type === 'GENERAL' ? 'TASKS' : null;
+}
+
+/**
+ * One task as the typed inbox reads it.
+ *
+ * `userId` is the signed-in clinician, and it is what turns an assignee column
+ * into the word the row shows: their own task is `ME`, and anything in the
+ * shared pool is `TEAM`. `assigneeType` decides which - a pooled task carrying
+ * a stale `assigneeUserId` is still unclaimed - so a task assigned to SOMEBODY
+ * ELSE reads as `TEAM` here and should not have been fetched; the route's
+ * `inboxFor` is what keeps it out.
+ */
+export function toInboxItem(dto: TaskDto, userId: string): InboxItem | null {
+  const stream = toStream(dto.type);
+  if (stream === null) return null;
+  return {
+    id: dto.id,
+    stream,
+    patientId: dto.patientId,
+    summary: dto.title,
+    detail: dto.description,
+    receivedAt: dto.createdAt,
+    dueAt: dto.dueAt,
+    assignedTo: dto.assigneeType === 'USER' && dto.assigneeUserId === userId ? 'ME' : 'TEAM',
+    /* No read receipt on a task, so this is not a fact here rather than a
+       `false`. See {@link InboxItem.unread}. */
+    unread: null,
+    /* The only subject this application has a screen for. A task pointing at a
+       message thread or a prescription has nowhere to open yet, and a link to
+       nowhere is worse than no link. */
+    href: dto.subjectType === 'DiagnosticReport' ? '/results' : null,
+  };
+}
+
+/**
+ * A page of inbox items, with the rows the five streams refused counted rather
+ * than dropped.
+ *
+ * The same shape and the same argument as {@link OrderPage} and
+ * {@link ResultPage}: `page.total` counts what the API matched, `data` holds
+ * what the inbox has a word for, and a clinician reading "12 items" above 9
+ * rows cannot tell whether three are missing or three are elsewhere.
+ */
+export interface InboxPage extends ListResponse<InboxItem> {
+  /** Rows on this page that belong to an administrative worklist, not this one. */
+  refused: number;
+}
+
+/** One page of tasks, as the typed inbox reads it. */
+export function toInboxPage(response: ListResponse<TaskDto>, userId: string): InboxPage {
+  const data = response.data
+    .map((dto) => toInboxItem(dto, userId))
+    .filter((item): item is InboxItem => item !== null);
+  return { data, page: response.page, refused: response.data.length - data.length };
+}
+
+/**
+ * `InboxListQuery` as `/bff/v0/tasks` can answer it.
+ *
+ * `stream` is deliberately NOT translated into `type`, even though the route
+ * has that filter: the screen filters streams in the browser and counts all
+ * five on the chips from one page, so narrowing at the route would empty the
+ * other four counts. `assignedTo` is narrowed here, because the pool and one
+ * person's own work are different pages rather than different rows of one.
+ */
+export function toTaskQuery(query: InboxListQuery, userId: string): TaskListQuery {
+  return {
+    inboxFor: userId,
+    open: true,
+    pageSize: INBOX_PAGE_SIZE,
+    sort: 'dueAt',
+    order: 'asc',
+    ...(query.assignedTo === undefined
+      ? {}
+      : { assigneeType: query.assignedTo === 'ME' ? 'USER' : 'TEAM' }),
+  };
+}
+
+/**
+ * The widest page `/bff/v0/tasks` will serve.
+ *
+ * `MAX_PAGE_SIZE` in `apps/api/src/schemas/pagination.ts`. Asked for
+ * explicitly because the route's default is 25 and this screen counts all five
+ * streams off one page: a default-sized page would render chip counts that are
+ * a property of the pagination rather than of the inbox. The residual is still
+ * reported - an inbox longer than this is a fact about the practice.
+ */
+const INBOX_PAGE_SIZE = 100;
+
+/**
+ * The dispositions the API records by itself, over `POST /bff/v0/tasks/{id}/complete`.
+ *
+ * One kind only: closing a general task. Approving a refill, cosigning a note
+ * and answering a message each change something other than the task, and
+ * closing the task alone would tell the reader it had been done - so those rows
+ * are read here and offered no button. The API has no route to claim a pooled
+ * task or to reopen a finished one, so neither is offered either.
+ *
+ * None of this needs the caller's id: the route takes the actor from the
+ * credential, which is why the module-level client below carries these too.
+ */
+function liveInboxWrites(client: ApiClient): Omit<WorklistClient['inbox'], 'list'> {
+  return {
+    completes: (item) => item.stream === 'TASKS',
+    complete: async (item) => {
+      await client.tasks.complete(item.id);
+    },
+    claim: null,
+    reopen: null,
+  };
+}
+
+/** The inbox half of {@link WorklistClient}, over `GET /bff/v0/tasks`. */
+export function liveInbox(client: ApiClient, userId: string): WorklistClient['inbox'] {
+  return {
+    list: (query = {}) =>
+      client.tasks.list(toTaskQuery(query, userId)).then((page) => toInboxPage(page, userId)),
+    ...liveInboxWrites(client),
+  };
+}
+
+/**
+ * The module-level client in live mode. The inbox's rows wait for a name - see
+ * {@link worklistFor} - but its writes do not, so a screen writes through this
+ * whichever client its reads came from.
+ */
+function liveWorklist(): WorklistClient {
+  const fixtures = createWorklistClient();
+  return {
+    orders: liveOrders(api),
+    results: liveResults(api, null),
+    inbox: { ...fixtures.inbox, ...liveInboxWrites(api) },
+  };
+}
+
+/**
  * The app's client.
  *
- * Orders read the API in live mode. Results and the inbox do not, because
- * `apps/api` still has no aggregate behind them - the inbox in particular is a
- * composition across results, messages and tasks that no route assembles. Mock
+ * In live mode orders and the unfiltered results queue read the API here. The
+ * inbox and the queue's ME/TEAM filter are defined in terms of the signed-in
+ * clinician and so are wired a request later, by {@link worklistFor}. Mock
  * mode keeps the fixture rows for all three: `MOCK_SERVICE_REQUESTS` is a
  * thinner set than `MOCK_ORDERS` and carries no cancellation reason or linked
  * report, so routing the demo through it would empty three columns of the
  * screen it is there to demonstrate.
  */
 export const worklist: WorklistClient =
-  API_MODE === 'live'
-    ? { ...createWorklistClient(), orders: liveOrders(api) }
-    : createWorklistClient();
+  API_MODE === 'live' ? liveWorklist() : createWorklistClient();
 
 /**
- * Whether the INBOX AND RESULTS screens are answering from fixtures, which
- * today they always are - in live mode as much as in mock mode. `apps/api` has
- * no aggregate behind either one.
+ * The app's client, once the caller has a name.
  *
- * Orders used to be the third, and is not any more: {@link worklist} reads
- * `GET /bff/v0/orders` in live mode. So this is no longer a property of the
- * whole worklist and the orders screen no longer renders the notice gated on
- * it - a screen reading Postgres carrying a "these rows are not real" banner is
- * the same lie in the other direction.
- *
- * Exported rather than left as a fact about this file, because the shell's
- * "Demo data" badge is gated on the api MODE and this is a property of the
- * DATA, and the two disagree exactly where it matters. Set
- * `NEXT_PUBLIC_API_MODE=live` and the badge goes - the shell has no session and
- * therefore no facility to name - while the inbox and results screens go on
- * serving Testperson, Exampla and a critical potassium that belongs to nobody.
- * The screen that reads this constant is the one that has to say so.
- *
- * It is a literal because the honest value is a literal: the day those two
- * routes land, this becomes a mode test and the screens reading it need no
- * other change.
+ * Two worklists are defined in terms of the signed-in clinician and so cannot
+ * be finished at module scope: the inbox, which is that person's work, and the
+ * sign-off queue's ME/TEAM filter, which is the same question asked of the
+ * `RESULT` stream. `userId` arrives from `/bff/v0/me` a request later. Null is
+ * "not known yet" - or a principal that is not staff at all - and yields the
+ * client above, which is why the hooks below hold their queries until it is not
+ * null.
  */
-export const WORKLIST_IS_FIXTURE_BACKED = true;
+export function worklistFor(userId: string | null): WorklistClient {
+  if (API_MODE !== 'live' || userId === null) return worklist;
+  return { ...worklist, inbox: liveInbox(api, userId), results: liveResults(api, userId) };
+}
 
 export interface WorklistHookOptions {
   /** Injectable for tests. Defaults to the app's client. */
@@ -562,22 +1120,129 @@ export function useOrders(
   });
 }
 
+/**
+ * The sign-off queue, narrowed to whoever asked for it.
+ *
+ * Unfiltered it needs no name and asks immediately, which is what it did before
+ * the ME/TEAM filter could select. `assignedTo` is the one query that does:
+ * assignment is a `Task` fact and the task read filters on a user id, so until
+ * `/bff/v0/me` lands there is nothing to ask the question of. Asking anyway
+ * would return every clinician's results under a control that says ME - the
+ * one wrong answer this filter can give - so the query holds and reports
+ * `/me`'s state as its own, the way {@link useInbox} does.
+ *
+ * An injected client is used as given, name or no name: that is the demo build
+ * and the tests, where the rows say whose they are.
+ */
 export function useResults(
   query: ResultListQuery = {},
   options: WorklistHookOptions = {}
-): AsyncState<ListResponse<ResultReport>> {
-  const client = options.client ?? worklist;
-  return useApiQuery(queryKey('results.list', { ...query }), () => client.results.list(query), {
-    enabled: options.enabled,
-  });
+): AsyncState<ResultPage> {
+  const capabilities = useOwnCapabilities();
+  const userId = capabilities.data?.userId ?? null;
+  const client = options.client ?? worklistFor(userId);
+  const live = options.client === undefined && API_MODE === 'live';
+  const named = !live || query.assignedTo === undefined || userId !== null;
+  const state = useApiQuery(
+    queryKey('results.list', { ...query }),
+    () => client.results.list(query),
+    { enabled: (options.enabled ?? true) && named }
+  );
+
+  const empty = useMemo(() => noResults(query.pageSize ?? RESULT_TASK_PAGE_SIZE), [query.pageSize]);
+  const held = useMemo(() => heldOn(capabilities, empty), [capabilities, empty]);
+
+  return named ? state : held;
 }
 
+/**
+ * The analytes of one report, fetched when there is a report to fetch them for.
+ *
+ * `enabled` is how the reading pane holds off until something is selected: the
+ * queue is what the screen opens on, and a list of analytes for no report is a
+ * request with no question in it.
+ */
+export function useResultAnalytes(
+  reportId: string | null,
+  options: WorklistHookOptions = {}
+): AsyncState<ListResponse<ResultAnalyte>> {
+  const client = options.client ?? worklist;
+  return useApiQuery(
+    queryKey('results.analytes', { reportId }),
+    () => client.results.analytes(reportId ?? ''),
+    { enabled: (options.enabled ?? true) && reportId !== null }
+  );
+}
+
+/**
+ * A worklist's own state while the name it is defined in terms of is in the air.
+ *
+ * A DISABLED query is not a held one. `useApiQuery` answers a disabled query
+ * with success and a null payload, and `AsyncBoundary` reads a null payload as
+ * a failure - so gating alone puts "This did not load" and an inert Try again
+ * over a screen whose prerequisite is simply still loading. The prerequisite is
+ * `/bff/v0/me`, so until it lands the hook reports THAT request's state as its
+ * own, retry included.
+ *
+ * `empty` is the answer once `/me` has landed and named nobody: a patient or a
+ * service principal, for whom the screen holds no work rather than a failure.
+ * It is a page rather than null so the surrounding statements read zero rather
+ * than a number about somebody else.
+ */
+function heldOn<T>(capabilities: AsyncState<PrincipalCapabilities>, empty: T): AsyncState<T> {
+  if (capabilities.status === 'error') {
+    return {
+      status: 'error',
+      data: null,
+      error: capabilities.error,
+      refetch: capabilities.refetch,
+    };
+  }
+  if (capabilities.status === 'loading') {
+    return { status: 'loading', data: null, error: null, refetch: capabilities.refetch };
+  }
+  return { status: 'success', data: empty, error: null, refetch: capabilities.refetch };
+}
+
+/**
+ * The typed inbox of the signed-in clinician.
+ *
+ * The only worklist hook that reads a second route. `/bff/v0/me` names the
+ * caller, and without that name the inbox cannot be asked for: the route
+ * filters on a user id, and every row is labelled mine or pool by comparing
+ * against the same id. So in live mode the query waits rather than asking for
+ * an unfiltered one, which would be every clinician's work under a heading
+ * that says it is yours.
+ *
+ * An injected client is used as given, name or no name: that is the demo build
+ * and the tests, where the rows say whose they are.
+ */
 export function useInbox(
   query: InboxListQuery = {},
   options: WorklistHookOptions = {}
-): AsyncState<ListResponse<InboxItem>> {
-  const client = options.client ?? worklist;
-  return useApiQuery(queryKey('inbox.list', { ...query }), () => client.inbox.list(query), {
-    enabled: options.enabled,
+): AsyncState<InboxPage> {
+  const capabilities = useOwnCapabilities();
+  const userId = capabilities.data?.userId ?? null;
+  const client = options.client ?? worklistFor(userId);
+  /* The name gates the request rather than keying it. Flipping `enabled` is
+     already what re-runs the query when `/me` comes back, so an id in the key
+     would add nothing in live mode and refetch the same fixture page in the
+     demo build - on the one screen whose chip counts are read while it
+     settles. */
+  const live = options.client === undefined && API_MODE === 'live';
+  const named = !live || userId !== null;
+  const state = useApiQuery(queryKey('inbox.list', { ...query }), () => client.inbox.list(query), {
+    enabled: (options.enabled ?? true) && named,
   });
+
+  const held = useMemo(() => heldOn(capabilities, NO_INBOX), [capabilities]);
+
+  return named ? state : held;
 }
+
+/** An inbox with nothing in it, for a caller this screen holds no work for. */
+const NO_INBOX: InboxPage = {
+  data: [],
+  page: { page: 1, pageSize: 0, total: 0, totalPages: 0 },
+  refused: 0,
+};

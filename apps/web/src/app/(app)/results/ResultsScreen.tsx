@@ -10,9 +10,18 @@ import type { Command } from '@/components/command';
 import { ResultList, ResultReading, SignNoteModal } from '@/components/results';
 import type { SignedNote } from '@/components/results';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary, FixtureDataNotice, Toast, isEmptyList } from '@/components/state';
-import { isBulkSignable, MOCK_NOW, mockPatientById, useResults } from '@/lib/api';
-import type { Assignment, ResultFlag, ResultReport, WorklistClient } from '@/lib/api';
+import { AsyncBoundary, Toast, isEmptyList } from '@/components/state';
+import {
+  isBulkSignable,
+  useMutation,
+  usePatientNames,
+  useProviderNames,
+  useResultAnalytes,
+  useResults,
+  worklist,
+} from '@/lib/api';
+import type { Assignment, ResultFlag, ResultPage, ResultReport, WorklistClient } from '@/lib/api';
+import { clinicNow } from '@/lib/api/chart';
 import { formatName } from '@/lib/format';
 import { formatCount } from '@openrunic/i18n';
 
@@ -51,6 +60,45 @@ const ASSIGNMENT_FILTERS: readonly { value: Assignment | ''; labelKey: string }[
   { value: '', labelKey: 'results.list.assignment.everyone' },
 ];
 
+/**
+ * The rows on this page, when the queue matched more than one page of them.
+ *
+ * The same statement the orders ledger makes and for the same reason: this
+ * screen has no pager, so a total above a full list is a number about the
+ * clinic rather than about the list, and 60 over 25 rows reads exactly like 60
+ * over 22 (#539).
+ */
+const RESULT_WINDOW: CountedMessage = {
+  oneKey: 'results.list.windowOne',
+  otherKey: 'results.list.windowOther',
+};
+
+const RESULT_COUNT: CountedMessage = {
+  oneKey: 'results.list.countOne',
+  otherKey: 'results.list.countOther',
+};
+
+/** Assigned tasks past the page the ME/TEAM filter reads. See `ResultPage.unlisted`. */
+const UNLISTED: CountedMessage = {
+  oneKey: 'results.list.unlistedOne',
+  otherKey: 'results.list.unlistedOther',
+};
+
+/** The rows the queue refused, because `SERVICE_REQUEST_CATEGORIES` is wider than OR-01's three. */
+const NOT_SHOWN: CountedMessage = {
+  oneKey: 'results.list.notShownOne',
+  otherKey: 'results.list.notShownOther',
+};
+
+/**
+ * The window this screen asks for, clamped by the route to `MAX_PAGE_SIZE`.
+ *
+ * The same size the orders ledger asks for, and for the same reason: a queue
+ * under a couple of hundred rows is one a clinician finishes, and re-fetching
+ * while they scan it flashes a skeleton over rows they were already reading.
+ */
+const PAGE_SIZE = 100;
+
 const BATCH_ACTION: CountedMessage = {
   oneKey: 'results.bulk.actionOne',
   otherKey: 'results.bulk.actionOther',
@@ -71,31 +119,261 @@ const BATCH_SIGNED: CountedMessage = {
   otherKey: 'results.bulk.signedOther',
 };
 
+/** The part of a batch that was not recorded, and so is still in the queue. */
+const BATCH_UNSIGNED: CountedMessage = {
+  oneKey: 'results.bulk.unsignedOne',
+  otherKey: 'results.bulk.unsignedOther',
+};
+
+interface Notice {
+  tone: 'success' | 'danger';
+  title: string;
+  message: string;
+}
+
 interface Signing {
   report: ResultReport;
   withNote: boolean;
 }
 
+/**
+ * What the rows on screen are a count of, and what is absent from them.
+ *
+ * Two separate facts, deliberately not one sentence. A row absent because it is
+ * on a page this screen cannot reach and a row absent because the queue has no
+ * word for its category have different remedies, and a reader who cannot tell
+ * them apart cannot act on either.
+ */
+function QueueStatement({ page }: Readonly<{ page: ResultPage }>): ReactElement {
+  const t = useTranslator();
+  /* The rows the route put on this page, the refused ones included, so the two
+     sum to the window without reading `pageSize` - the route's clamp, not
+     necessarily what it applied. */
+  const windowed = page.data.length + page.refused;
+
+  return (
+    <>
+      <p className="or-caption">
+        {windowed < page.page.total
+          ? counted(t, RESULT_WINDOW, windowed, {
+              total: formatCount(page.page.total, t.locale),
+            })
+          : counted(t, RESULT_COUNT, page.page.total)}
+      </p>
+      {page.refused > 0 ? (
+        <p className="or-caption">
+          <strong>{counted(t, NOT_SHOWN, page.refused)}</strong>
+        </p>
+      ) : null}
+      {page.unlisted ? (
+        <p className="or-caption">
+          <strong>{counted(t, UNLISTED, page.unlisted)}</strong>
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 export interface ResultsScreenProps {
   /** Injectable for tests. Defaults to the app's worklist client. */
   client?: WorklistClient;
-  /** Fixed "now", so a signature timestamp is deterministic. */
+  /**
+   * Fixed "now", so a signature timestamp is deterministic. Defaults to the
+   * clinic's clock: the fixtures' instant in the demo build, the wall clock
+   * against the API.
+   */
   now?: string;
+}
+
+/**
+ * The verbs this screen offers the command palette.
+ *
+ * A hook rather than a block inside the screen, because it is the one part of
+ * `ResultsScreen` with no markup in it.
+ */
+function useResultCommands({
+  selected,
+  bulkCandidates,
+  notes,
+  requestSign,
+  setAssignment,
+  setBulkOpen,
+}: Readonly<{
+  selected: ResultReport | null;
+  bulkCandidates: readonly ResultReport[];
+  /** Whether a sign-off can carry a note; the palette offers no command the pane does not. */
+  notes: boolean;
+  requestSign: (report: ResultReport | null, withNote: boolean) => void;
+  setAssignment: (assignment: Assignment) => void;
+  setBulkOpen: (open: boolean) => void;
+}>): Command[] {
+  const t = useTranslator();
+  return useMemo<Command[]>(
+    () => {
+      const all: Command[] = [
+        {
+          id: 'results.sign',
+          group: 'actions',
+          label: t('results.command.sign'),
+          keywords: searchWords(t('results.command.signKeywords')),
+          icon: 'pen-line',
+          perform: () => requestSign(selected, false),
+        },
+        {
+          id: 'results.sign-note',
+          group: 'actions',
+          label: t('results.command.signNote'),
+          keywords: searchWords(t('results.command.signNoteKeywords')),
+          icon: 'message-square',
+          perform: () => requestSign(selected, true),
+        },
+        {
+          id: 'results.bulk-sign',
+          group: 'actions',
+          label: t('results.command.bulkSign'),
+          keywords: searchWords(t('results.command.bulkSignKeywords')),
+          icon: 'check-check',
+          perform: () => setBulkOpen(bulkCandidates.length > 0),
+        },
+        {
+          id: 'results.mine',
+          group: 'actions',
+          label: t('results.command.mine'),
+          keywords: searchWords(t('results.command.mineKeywords')),
+          icon: 'user-round',
+          perform: () => setAssignment('ME'),
+        },
+        {
+          id: 'results.team',
+          group: 'actions',
+          label: t('results.command.team'),
+          keywords: searchWords(t('results.command.teamKeywords')),
+          icon: 'users',
+          perform: () => setAssignment('TEAM'),
+        },
+      ];
+      return notes ? all : all.filter((command) => command.id !== 'results.sign-note');
+    },
+    /* The two setters are `useState`'s own and stable, but they arrive here as
+       parameters rather than from a `useState` call this hook can see, so they
+       are named rather than assumed. */
+    [t, selected, bulkCandidates.length, notes, requestSign, setAssignment, setBulkOpen]
+  );
+}
+
+/**
+ * The sign-offs made on this screen, and what the clinician is told about each.
+ *
+ * Nothing is marked signed until the client says it was recorded: a refused
+ * sign-off leaves the report in the queue and the notice says so. Each report
+ * in a batch is its own sign-off, so a batch can half succeed; what was
+ * recorded is marked, what was not is counted, and the requests are settled
+ * rather than awaited as one so a single refusal cannot hide the rest.
+ */
+function useSignOff(writer: WorklistClient, now: string, refresh: () => void) {
+  const t = useTranslator();
+  const [signed, setSigned] = useState<Record<string, SignedNote>>({});
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [batching, setBatching] = useState(false);
+  const signOff = useMutation((report: ResultReport, note: string | null) =>
+    writer.results.sign(report, note, now)
+  );
+
+  const signOne = useCallback(
+    async (report: ResultReport, note: string | null) => {
+      const outcome = await signOff.run(report, note);
+      /* Signed by somebody else between this page loading and the press: the
+         row is stale rather than unsigned, so the queue is read again instead
+         of offering a sign-off the record will refuse every time. */
+      if (!outcome.ok && outcome.error.status === 409) {
+        refresh();
+        setNotice({
+          tone: 'danger',
+          title: t('results.signConflict.title', { panel: report.panel }),
+          message: t('results.signConflict.message'),
+        });
+        return true;
+      }
+      if (!outcome.ok) {
+        setNotice({
+          tone: 'danger',
+          title: t('results.signFailed.title', { panel: report.panel }),
+          message: t('results.signFailed.message'),
+        });
+        return false;
+      }
+      setSigned((previous) => ({ ...previous, [report.id]: outcome.value }));
+      setNotice({
+        tone: 'success',
+        title: t('results.signed.title', { panel: report.panel }),
+        message: outcome.value.note
+          ? t('results.signed.messageWithNote')
+          : t('results.signed.message'),
+      });
+      return true;
+    },
+    [t, signOff, refresh]
+  );
+
+  const signBatch = useCallback(
+    async (reports: readonly ResultReport[]) => {
+      setBatching(true);
+      const settled = await Promise.allSettled(
+        reports.map(
+          async (report) => [report.id, await writer.results.sign(report, null, now)] as const
+        )
+      );
+      setBatching(false);
+      const stamped: Record<string, SignedNote> = Object.fromEntries(
+        settled.flatMap((outcome) => (outcome.status === 'fulfilled' ? [outcome.value] : []))
+      );
+      const recorded = Object.keys(stamped).length;
+      const unsigned = reports.length - recorded;
+      setSigned((previous) => ({ ...previous, ...stamped }));
+      /* A refusal can be a report somebody else has signed meanwhile, so the
+         queue is read again rather than left showing it as waiting. */
+      if (unsigned > 0) refresh();
+      setNotice({
+        tone: unsigned === 0 ? 'success' : 'danger',
+        title: counted(t, BATCH_SIGNED, recorded),
+        message: unsigned === 0 ? t('results.bulk.message') : counted(t, BATCH_UNSIGNED, unsigned),
+      });
+    },
+    [t, writer, now, refresh]
+  );
+
+  const dismiss = useCallback(() => setNotice(null), []);
+
+  return useMemo(
+    () => ({ signed, notice, dismiss, signOne, signBatch, busy: signOff.pending || batching }),
+    [signed, notice, dismiss, signOne, signBatch, signOff.pending, batching]
+  );
 }
 
 export function ResultsScreen({
   client,
-  now = MOCK_NOW,
+  now: fixedNow,
 }: Readonly<ResultsScreenProps>): ReactElement {
   const t = useTranslator();
+  const [now] = useState(() => fixedNow ?? clinicNow());
+  /* Writes go through the client the reads came from. In live mode that is the
+     module-level one: a sign-off names its signer from the credential, so it
+     does not wait for `/bff/v0/me` the way the ME filter does. */
+  const writer = client ?? worklist;
+  /* The clinician's own sign-off queue is what this screen is for, and every
+     client can now answer it: over fixtures from the row, and over the API from
+     the `RESULT` task that carries the assignment (#535). */
   const [assignment, setAssignment] = useState<Assignment | ''>('ME');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [signed, setSigned] = useState<Record<string, SignedNote>>({});
   const [signing, setSigning] = useState<Signing | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
 
-  const results = useResults(assignment ? { assignedTo: assignment } : {}, { client });
+  const results = useResults(
+    { pageSize: PAGE_SIZE, ...(assignment ? { assignedTo: assignment } : {}) },
+    { client }
+  );
+  const signOffs = useSignOff(writer, now, results.refetch);
+  const { signed, busy } = signOffs;
 
   const assignmentFilters = useMemo<SelectOption[]>(
     () => ASSIGNMENT_FILTERS.map((filter) => ({ value: filter.value, label: t(filter.labelKey) })),
@@ -116,28 +394,42 @@ export function ResultsScreen({
 
   const selected = reports.find((report) => report.id === selectedId) ?? reports[0] ?? null;
 
-  const signOne = useCallback(
-    (report: ResultReport, note: string | null) => {
-      setSigned((previous) => ({ ...previous, [report.id]: { at: now, note } }));
-      setSigning(null);
-      setToast({
-        title: t('results.signed.title', { panel: report.panel }),
-        message: note ? t('results.signed.messageWithNote') : t('results.signed.message'),
-      });
-    },
-    [t, now]
-  );
+  /* The queue and the reading pane name the same people, so both read one
+     directory rather than one each. Keyed on the page the route answered, not
+     on the selection: opening a row is not a new set of patients. */
+  const patientNamed = usePatientNames(reports.map((report) => report.patientId));
+  const providerNamed = useProviderNames();
 
-  const signBulk = useCallback(() => {
-    const stamped: Record<string, SignedNote> = {};
-    for (const report of bulkCandidates) stamped[report.id] = { at: now, note: null };
-    setSigned((previous) => ({ ...previous, ...stamped }));
+  /* The analytes of the one report being read. Fetched here rather than with
+     the list, because one call per row is N+1 on a queue built to be scanned
+     and the values of a report nobody opened are never looked at. */
+  const analytes = useResultAnalytes(selected?.id ?? null, { client });
+  const reading =
+    selected && analytes.data ? { ...selected, analytes: analytes.data.data } : selected;
+  /* What the laboratory reported and this page of the report does not hold. The
+     route paginates these too, so the pane states its own residual the way the
+     queue states the rows it refused. */
+  const unshownAnalytes = analytes.data
+    ? Math.max(analytes.data.page.total - analytes.data.data.length, 0)
+    : 0;
+  /* Sign-off waits until every value is on screen. The list does not carry
+     them, so while they load - or after they fail to, or when the report holds
+     more than one page of them - the pane would show a report short of its
+     values and still offer to sign it. */
+  const readable = analytes.status === 'success' && unshownAnalytes === 0;
+
+  const signOne = useCallback(
+    async (report: ResultReport, note: string | null) => {
+      /* The dialog stays open on a refusal, note and all, so a retry is one
+         press rather than the note typed again. */
+      if (await signOffs.signOne(report, note)) setSigning(null);
+    },
+    [signOffs]
+  );
+  const signBulk = useCallback(async () => {
+    await signOffs.signBatch(bulkCandidates);
     setBulkOpen(false);
-    setToast({
-      title: counted(t, BATCH_SIGNED, bulkCandidates.length),
-      message: t('results.bulk.message'),
-    });
-  }, [t, bulkCandidates, now]);
+  }, [signOffs, bulkCandidates]);
 
   const requestSign = useCallback((report: ResultReport | null, withNote: boolean) => {
     if (!report) return;
@@ -145,53 +437,16 @@ export function ResultsScreen({
     setSigning({ report, withNote });
   }, []);
 
-  const commands = useMemo<Command[]>(
-    () => [
-      {
-        id: 'results.sign',
-        group: 'actions',
-        label: t('results.command.sign'),
-        keywords: searchWords(t('results.command.signKeywords')),
-        icon: 'pen-line',
-        perform: () => requestSign(selected, false),
-      },
-      {
-        id: 'results.sign-note',
-        group: 'actions',
-        label: t('results.command.signNote'),
-        keywords: searchWords(t('results.command.signNoteKeywords')),
-        icon: 'message-square',
-        perform: () => requestSign(selected, true),
-      },
-      {
-        id: 'results.bulk-sign',
-        group: 'actions',
-        label: t('results.command.bulkSign'),
-        keywords: searchWords(t('results.command.bulkSignKeywords')),
-        icon: 'check-check',
-        perform: () => setBulkOpen(bulkCandidates.length > 0),
-      },
-      {
-        id: 'results.mine',
-        group: 'actions',
-        label: t('results.command.mine'),
-        keywords: searchWords(t('results.command.mineKeywords')),
-        icon: 'user-round',
-        perform: () => setAssignment('ME'),
-      },
-      {
-        id: 'results.team',
-        group: 'actions',
-        label: t('results.command.team'),
-        keywords: searchWords(t('results.command.teamKeywords')),
-        icon: 'users',
-        perform: () => setAssignment('TEAM'),
-      },
-    ],
-    [t, selected, bulkCandidates.length, requestSign]
-  );
+  const commands = useResultCommands({
+    selected,
+    bulkCandidates,
+    notes: writer.results.notes,
+    requestSign,
+    setAssignment,
+    setBulkOpen,
+  });
 
-  const selectedPatient = selected ? mockPatientById(selected.patientId) : undefined;
+  const selectedPatient = selected ? patientNamed(selected.patientId) : undefined;
   const selectedPatientName = selectedPatient
     ? formatName(selectedPatient.name, 'full')
     : t('results.thisPatient');
@@ -233,7 +488,6 @@ export function ResultsScreen({
       }
     >
       <ScreenCommands commands={commands} />
-      <FixtureDataNotice />
       <AsyncBoundary
         state={results}
         subject={t('results.list.subject')}
@@ -250,7 +504,7 @@ export function ResultsScreen({
           ),
         }}
       >
-        {() => (
+        {(page: ResultPage) => (
           <div className="or-results">
             <Card
               tone="cream"
@@ -267,16 +521,24 @@ export function ResultsScreen({
                   const report = reports.find((candidate) => candidate.id === id) ?? null;
                   requestSign(report, false);
                 }}
+                patientNamed={patientNamed}
               />
+              <QueueStatement page={page} />
             </Card>
 
-            {selected ? (
+            {reading ? (
               <ResultReading
-                report={selected}
-                signed={signed[selected.id] ?? null}
+                report={reading}
+                signed={signed[reading.id] ?? null}
                 now={now}
-                onSign={() => requestSign(selected, false)}
-                onSignWithNote={() => requestSign(selected, true)}
+                onSign={() => requestSign(reading, false)}
+                onSignWithNote={() => requestSign(reading, true)}
+                notes={writer.results.notes}
+                values={analytes.status}
+                onRetryValues={analytes.refetch}
+                unshownAnalytes={unshownAnalytes}
+                patientNamed={patientNamed}
+                providerNamed={providerNamed}
               />
             ) : null}
           </div>
@@ -302,7 +564,8 @@ export function ResultsScreen({
             </Button>
             <Button
               iconLeft="pen-line"
-              onClick={() => (signing ? signOne(signing.report, null) : undefined)}
+              disabled={busy || !readable}
+              onClick={() => (signing ? void signOne(signing.report, null) : undefined)}
             >
               {t('results.sign.confirm')}
             </Button>
@@ -310,12 +573,16 @@ export function ResultsScreen({
         }
       />
 
+      {/* Keyed on the report being signed, so a note survives a refused
+          sign-off and its retry but never carries over to another result. */}
       <SignNoteModal
+        key={signing?.withNote ? signing.report.id : 'closed'}
         open={signing?.withNote === true}
         subject={signing?.report.panel ?? ''}
         patientName={selectedPatientName}
         onCancel={() => setSigning(null)}
-        onConfirm={(note) => (signing ? signOne(signing.report, note || null) : undefined)}
+        onConfirm={(note) => (signing ? void signOne(signing.report, note || null) : undefined)}
+        disabled={busy || !readable}
       />
 
       <Modal
@@ -328,7 +595,7 @@ export function ResultsScreen({
             <Button variant="ghost" onClick={() => setBulkOpen(false)}>
               {t('results.sign.cancel')}
             </Button>
-            <Button iconLeft="check-check" onClick={signBulk}>
+            <Button iconLeft="check-check" disabled={busy} onClick={() => void signBulk()}>
               {counted(t, BATCH_CONFIRM, bulkCandidates.length)}
             </Button>
           </>
@@ -341,13 +608,13 @@ export function ResultsScreen({
         </ul>
       </Modal>
 
-      {toast ? (
+      {signOffs.notice ? (
         <div className="or-toast-dock">
           <Toast
-            tone="success"
-            title={toast.title}
-            message={toast.message}
-            onClose={() => setToast(null)}
+            tone={signOffs.notice.tone}
+            title={signOffs.notice.title}
+            message={signOffs.notice.message}
+            onClose={signOffs.dismiss}
           />
         </div>
       ) : null}

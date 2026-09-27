@@ -101,6 +101,23 @@ jobs:
         if: steps.browsers.outputs.cache-hit == 'true'
         run: pnpm --filter @openrunic/e2e exec playwright install-deps chromium
 
+      - name: Install Chrome for the portal project
+        # `channel: 'chrome'` in apps/e2e/playwright.config.ts selects a system
+        # package, so the Playwright browser cache cannot satisfy it.
+        run: pnpm --filter @openrunic/e2e exec playwright install chrome
+
+      # The read-aloud scenario needs a voice for the page's language. Chrome on
+      # Linux reads its voice list from speech-dispatcher, and the runner has
+      # none installed, so without this step the list is empty and the scenario
+      # has nothing to speak with. espeak-ng is the synthesiser and
+      # speech-dispatcher-espeak-ng joins the two; without it the daemon has no
+      # voices. Chrome only talks to the daemon when started with
+      # --enable-speech-dispatcher, which the portal project passes.
+      - name: Install a system speech service
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y speech-dispatcher speech-dispatcher-espeak-ng espeak-ng
+
       # apps/web imports @openrunic/ui and the other workspace packages by their
       # built output, so the shared packages have to exist before Next can
       # resolve them. Without this the drill fails as 74 "Module not found"
@@ -109,9 +126,11 @@ jobs:
       - name: Build the workspace packages the application imports
         run: pnpm turbo run build --filter='./packages/*'
 
-      # The drill runs the application in mock mode, so no database, no API and
-      # no seed. It reports loudly and exits zero when the clinical screens are
-      # not present on the branch, and switches itself on when they land.
+      # The clinical drill runs apps/web in mock mode, so it needs no database,
+      # API or seed. The portal scenarios start apps/portal in live mode and
+      # exercise its real session gate and its two speech adapters; the handful
+      # of API responses they need are fulfilled in the browser, so this job
+      # still needs no API running.
       - name: Run the full clinical day
         run: pnpm --filter @openrunic/e2e run drill
         env:

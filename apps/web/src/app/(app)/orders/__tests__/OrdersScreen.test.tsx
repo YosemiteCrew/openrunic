@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrdersScreen } from '@/app/(app)/orders/OrdersScreen';
@@ -8,6 +8,7 @@ import { createWorklistClient } from '@/lib/api/worklist';
 import type { WorklistClient } from '@/lib/api/worklist';
 
 const push = vi.fn();
+const CORE_ORDERS = MOCK_ORDERS.slice(0, 13);
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
@@ -16,7 +17,12 @@ vi.mock('next/navigation', () => ({
 
 function failing(): WorklistClient {
   const fail = () => Promise.reject(new ApiError('offline', { kind: 'network' }));
-  return { orders: { list: fail }, results: { list: fail }, inbox: { list: fail } };
+  const base = createWorklistClient();
+  return {
+    orders: { list: fail },
+    results: { ...base.results, list: fail, analytes: fail },
+    inbox: { ...base.inbox, list: fail },
+  };
 }
 
 /**
@@ -29,7 +35,7 @@ function failing(): WorklistClient {
  * only on exactly this page.
  */
 function withRefused(refused: number): WorklistClient {
-  const base = createWorklistClient();
+  const base = createWorklistClient({ orders: CORE_ORDERS });
   return {
     ...base,
     orders: {
@@ -55,7 +61,7 @@ function withRefused(refused: number): WorklistClient {
  * one number for both would be wrong in whichever direction the reader guessed.
  */
 function truncated(beyond: number): WorklistClient {
-  const base = createWorklistClient();
+  const base = createWorklistClient({ orders: CORE_ORDERS });
   return {
     ...base,
     orders: {
@@ -85,16 +91,24 @@ describe('OrdersScreen', () => {
     const table = await screen.findByRole('table');
     expect(within(table).getAllByText('HbA1c').length).toBeGreaterThan(0);
     expect(within(table).getAllByText('In progress').length).toBeGreaterThan(0);
-    expect(within(table).getAllByText('OR-100482').length).toBeGreaterThan(0);
+    // Awaited rather than read: the patient column is a SECOND read now, over
+    // the ids the ledger came back with, so the table exists a tick before the
+    // names in it do. See `lib/api/names.ts`.
+    expect((await within(table).findAllByText('OR-100482')).length).toBeGreaterThan(0);
+    /* The ordering clinician, from the staff directory rather than from a
+       fixture table of display names - so the ledger calls them what the chart
+       calls them, credential included. */
+    expect((await within(table).findAllByText('Ada Okafor, MD')).length).toBeGreaterThan(0);
   });
 
-  it('names an unacknowledged requisition and offers a retry in the row', async () => {
+  /* The age and the state say the requisition has sat unacknowledged. Nothing
+     re-sends one yet, so no button offers to: a control that does nothing when
+     pressed would read as a retry that was tried. */
+  it('names an unacknowledged requisition and offers no retry it cannot send', async () => {
     render(<OrdersScreen client={createWorklistClient()} now={MOCK_NOW} />);
 
     expect(await screen.findByText(/Unacknowledged 1 d/)).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /Retry Ankle X-ray, three views/ })
-    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Retry/ })).not.toBeInTheDocument();
   });
 
   it('filters the ledger to one status', async () => {
@@ -139,11 +153,15 @@ describe('OrdersScreen', () => {
     expect(screen.getAllByRole('link', { name: 'New order' }).length).toBeGreaterThan(0);
   });
 
-  it('states how many orders the ledger matched', async () => {
+  it('renders the demo beyond one page and names the unreachable remainder', async () => {
     render(<OrdersScreen client={createWorklistClient()} now={MOCK_NOW} />);
-    await screen.findByRole('table');
+    const table = await screen.findByRole('table');
 
-    expect(screen.getByText(`${MOCK_ORDERS.length} orders`)).toBeInTheDocument();
+    expect(within(table).getAllByRole('row')).toHaveLength(101);
+    expect(
+      screen.getByText(`100 of ${MOCK_ORDERS.length} orders.`, { exact: false })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(`${MOCK_ORDERS.length} orders`)).not.toBeInTheDocument();
     expect(screen.queryByText(/not listed/)).not.toBeInTheDocument();
   });
 
@@ -154,8 +172,8 @@ describe('OrdersScreen', () => {
     render(<OrdersScreen client={withRefused(3)} now={MOCK_NOW} />);
 
     const table = await screen.findByRole('table');
-    expect(within(table).getAllByRole('row')).toHaveLength(MOCK_ORDERS.length + 1);
-    expect(screen.getByText(`${MOCK_ORDERS.length + 3} orders`)).toBeInTheDocument();
+    expect(within(table).getAllByRole('row')).toHaveLength(CORE_ORDERS.length + 1);
+    expect(screen.getByText(`${CORE_ORDERS.length + 3} orders`)).toBeInTheDocument();
     expect(screen.getByText(/^3 of the orders on this page are not listed/)).toBeInTheDocument();
   });
 
@@ -166,15 +184,15 @@ describe('OrdersScreen', () => {
     render(<OrdersScreen client={truncated(35)} now={MOCK_NOW} />);
 
     const table = await screen.findByRole('table');
-    expect(within(table).getAllByRole('row')).toHaveLength(MOCK_ORDERS.length + 1);
+    expect(within(table).getAllByRole('row')).toHaveLength(CORE_ORDERS.length + 1);
     expect(
-      screen.getByText(`${MOCK_ORDERS.length} of ${MOCK_ORDERS.length + 35} orders.`, {
+      screen.getByText(`${CORE_ORDERS.length} of ${CORE_ORDERS.length + 35} orders.`, {
         exact: false,
       })
     ).toBeInTheDocument();
     /* The bare total is what the reader would otherwise have read as the row
        count, so it must not also be on the page. */
-    expect(screen.queryByText(`${MOCK_ORDERS.length + 35} orders`)).not.toBeInTheDocument();
+    expect(screen.queryByText(`${CORE_ORDERS.length + 35} orders`)).not.toBeInTheDocument();
   });
 
   it('asks for a window wider than the route default', async () => {
@@ -192,5 +210,25 @@ describe('OrdersScreen', () => {
 
     expect(await screen.findByText('No connection to the server')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+});
+
+/* Without a fixed instant the ledger reads the clinic clock, which in the demo
+   build is the fixtures' own instant and against the API is the wall clock. So
+   a default render here says exactly what a fixed-instant one does, ages
+   included; a screen still defaulting to the fixtures' day would pass this too,
+   which is why the live half is the clock's own test. */
+describe('OrdersScreen, its own clock', () => {
+  it('ages every order against the clinic clock when no instant is fixed', async () => {
+    const fixed = render(<OrdersScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByText(/Unacknowledged 1 d/);
+    // The patient names are a second read; the comparison is of the settled page.
+    await screen.findAllByText(/Patientsson, Tess/);
+    const expected = document.body.textContent;
+    fixed.unmount();
+
+    render(<OrdersScreen client={createWorklistClient()} />);
+
+    await waitFor(() => expect(document.body.textContent).toBe(expected));
   });
 });

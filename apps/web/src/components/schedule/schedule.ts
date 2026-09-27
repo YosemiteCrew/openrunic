@@ -404,6 +404,10 @@ export interface FindAvailableOptions {
   durationMinutes?: number;
   /** How many slots to return. Five is what the brief asks the button to surface. */
   limit?: number;
+  /** Earliest start, minutes past midnight clinic time. Narrows the day, never widens it. */
+  notBefore?: number | null;
+  /** Latest end, minutes past midnight clinic time. Narrows the day, never widens it. */
+  notAfter?: number | null;
 }
 
 /**
@@ -434,13 +438,21 @@ export function findOpenSlots(
   const live = appointments.filter((appointment) => appointment.status !== 'CANCELLED');
   const window = dayWindow(live);
 
-  const afterMinutes = minutesOfDay(after.toISOString()) ?? window.openMinutes;
-  const first = Math.ceil(Math.max(afterMinutes, window.openMinutes) / SLOT_MINUTES) * SLOT_MINUTES;
+  /* "After now" is a floor on today only. A later day has no past to skip, and
+     an earlier one is all past: reading the time of day off `after` alone put
+     the clock's afternoon on tomorrow and hid a whole free morning. */
+  const afterDay = after.toISOString().slice(0, 10);
+  if (day < afterDay) return [];
+  const afterMinutes =
+    day > afterDay ? 0 : (minutesOfDay(after.toISOString()) ?? window.openMinutes);
+  const earliest = Math.max(afterMinutes, window.openMinutes, options.notBefore ?? 0);
+  const first = Math.ceil(earliest / SLOT_MINUTES) * SLOT_MINUTES;
+  const close = Math.min(window.closeMinutes, options.notAfter ?? window.closeMinutes);
 
   const slots: OpenSlot[] = [];
   for (const providerId of providerIds) {
     const booked = live.filter((appointment) => appointment.providerId === providerId);
-    for (let start = first; start + duration <= window.closeMinutes; start += SLOT_MINUTES) {
+    for (let start = first; start + duration <= close; start += SLOT_MINUTES) {
       const from = instantAt(day, start);
       const to = instantAt(day, start + duration);
       const clash = booked.some((appointment) => appointment.start < to && appointment.end > from);

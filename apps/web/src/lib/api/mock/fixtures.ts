@@ -148,11 +148,6 @@ export const MOCK_PROVIDERS = [
   { id: LINDQVIST.id, name: 'Dr. Lindqvist', role: 'Paediatrics' },
 ] as const;
 
-/** Reads a provider name for a fixture id, so a fixture screen is never a UUID. */
-export function mockProviderName(providerId: string): string {
-  return MOCK_PROVIDERS.find((provider) => provider.id === providerId)?.name ?? 'Unassigned';
-}
-
 interface PatientSeed {
   id: string;
   mrn: string;
@@ -621,11 +616,6 @@ export function mockPatientIdByMrn(mrn: string): string {
   const patient = MOCK_PATIENTS.find((candidate) => candidate.mrn === mrn);
   if (patient === undefined) throw new Error(`no fixture patient carries MRN ${mrn}`);
   return patient.id;
-}
-
-export function mockPatientById(patientId: string | null): Patient | undefined {
-  if (!patientId) return undefined;
-  return MOCK_PATIENTS.find((patient) => patient.id === patientId);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1408,8 +1398,8 @@ function catalogEntry(code: string): OrderCatalogEntry {
   return entry;
 }
 
-/** Thirteen orders across the practice, newest first, as the ledger reads them. */
-export const MOCK_ORDERS: readonly Order[] = ORDER_SEEDS.map((seed): Order => {
+/** The clinically distinct orders used to exercise each ledger state and action. */
+const CORE_ORDERS: readonly Order[] = ORDER_SEEDS.map((seed): Order => {
   const entry = catalogEntry(seed.code);
   return {
     id: seed.id,
@@ -1429,7 +1419,55 @@ export const MOCK_ORDERS: readonly Order[] = ORDER_SEEDS.map((seed): Order => {
     resultId: seed.resultId ?? null,
     cancelReason: seed.cancelReason ?? null,
   };
-}).sort((a, b) => b.placedAt.localeCompare(a.placedAt));
+});
+
+const HISTORICAL_ORDER_COUNT = 88;
+const HISTORICAL_PATIENTS = Object.values(PATIENT_ID);
+const HISTORICAL_CODES = ['LAB-BMP', 'LAB-CBC', 'LAB-LIPID', 'LAB-TSH'] as const;
+
+/**
+ * Enough older routine work to put the demo ledger over its 100-row window.
+ *
+ * The screen has to explain that its full table is still only one page. Keeping
+ * that state in the fixture makes the explanation reachable in the running
+ * product, where its wording and wrapping can be inspected, instead of only in
+ * a unit test with a synthetic response. These rows deliberately carry no
+ * result link: the richer core rows above remain the fixtures for transitions
+ * and result navigation.
+ */
+const HISTORICAL_ORDERS: readonly Order[] = Array.from(
+  { length: HISTORICAL_ORDER_COUNT },
+  (_, index): Order => {
+    const code = HISTORICAL_CODES[index % HISTORICAL_CODES.length] ?? HISTORICAL_CODES[0];
+    const entry = catalogEntry(code);
+    const serial = String(index + 1).padStart(3, '0');
+    const placedAt = new Date(Date.UTC(2026, 6, 1, 9, 0) - index * 86_400_000).toISOString();
+
+    return {
+      id: `0192f1a0-0000-7000-8000-00000000h${serial}`,
+      patientId: HISTORICAL_PATIENTS[index % HISTORICAL_PATIENTS.length] ?? PATIENT_ID.testina,
+      code: entry.code,
+      name: entry.name,
+      category: entry.category,
+      status: 'SIGNED',
+      priority: 'ROUTINE',
+      placedAt,
+      lastEventAt: placedAt,
+      providerId: index % 2 === 0 ? PROVIDER_ID.okafor : PROVIDER_ID.lindqvist,
+      destination: entry.destination,
+      specimen: entry.specimen,
+      diagnosisCode: null,
+      diagnosisDisplay: null,
+      resultId: null,
+      cancelReason: null,
+    };
+  }
+);
+
+/** 101 orders, newest first, so the demo reaches the ledger's 100-row window. */
+export const MOCK_ORDERS: readonly Order[] = [...CORE_ORDERS, ...HISTORICAL_ORDERS].sort((a, b) =>
+  b.placedAt.localeCompare(a.placedAt)
+);
 
 /**
  * Eight reports, abnormal-heavy on purpose: a results queue that is all normal
@@ -1448,6 +1486,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Cedar Reference Lab',
     orderedBy: PROVIDER_ID.okafor,
+    signedBy: null,
     assignedTo: 'ME',
     narrative: null,
     analytes: [
@@ -1501,6 +1540,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Cedar Reference Lab',
     orderedBy: PROVIDER_ID.okafor,
+    signedBy: null,
     assignedTo: 'ME',
     narrative: null,
     analytes: [
@@ -1547,6 +1587,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Cedar Reference Lab',
     orderedBy: PROVIDER_ID.lindqvist,
+    signedBy: null,
     assignedTo: 'TEAM',
     narrative: null,
     analytes: [
@@ -1586,6 +1627,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Cedar Reference Lab',
     orderedBy: PROVIDER_ID.okafor,
+    signedBy: null,
     assignedTo: 'ME',
     narrative: null,
     analytes: [
@@ -1626,6 +1668,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Cedar Reference Lab',
     orderedBy: PROVIDER_ID.okafor,
+    signedBy: null,
     assignedTo: 'ME',
     narrative: null,
     analytes: [
@@ -1663,6 +1706,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Cedar Clinic, in-house',
     orderedBy: PROVIDER_ID.lindqvist,
+    signedBy: null,
     assignedTo: 'TEAM',
     narrative: null,
     analytes: [
@@ -1691,6 +1735,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'UNREVIEWED',
     performer: 'Birchwood Imaging',
     orderedBy: PROVIDER_ID.lindqvist,
+    signedBy: null,
     assignedTo: 'ME',
     analytes: [],
     narrative:
@@ -1708,6 +1753,7 @@ export const MOCK_RESULTS: readonly ResultReport[] = [
     status: 'SIGNED',
     performer: 'Cedar Clinic, in-house',
     orderedBy: PROVIDER_ID.okafor,
+    signedBy: PROVIDER_ID.okafor,
     assignedTo: 'ME',
     analytes: [],
     narrative: 'Impression: sinus rhythm at 68 beats per minute. No acute changes.',
@@ -1733,8 +1779,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-12T11:00:00.000Z',
     assignedTo: 'ME',
     unread: true,
-    actionLabel: 'Review result',
-    doneLabel: 'Result opened',
     href: '/results',
   },
   {
@@ -1747,8 +1791,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-13T09:00:00.000Z',
     assignedTo: 'ME',
     unread: true,
-    actionLabel: 'Review result',
-    doneLabel: 'Result opened',
     href: '/results',
   },
   {
@@ -1761,8 +1803,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-13T12:00:00.000Z',
     assignedTo: 'TEAM',
     unread: false,
-    actionLabel: 'Review result',
-    doneLabel: 'Result opened',
     href: '/results',
   },
   {
@@ -1775,8 +1815,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-12T17:00:00.000Z',
     assignedTo: 'ME',
     unread: true,
-    actionLabel: 'Reply',
-    doneLabel: 'Reply sent',
     href: null,
   },
   {
@@ -1789,8 +1827,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-13T17:00:00.000Z',
     assignedTo: 'TEAM',
     unread: false,
-    actionLabel: 'Reply',
-    doneLabel: 'Reply sent',
     href: null,
   },
   {
@@ -1803,8 +1839,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-13T09:00:00.000Z',
     assignedTo: 'TEAM',
     unread: false,
-    actionLabel: 'Approve refill',
-    doneLabel: 'Refill approved',
     href: null,
   },
   {
@@ -1817,8 +1851,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-11T17:00:00.000Z',
     assignedTo: 'ME',
     unread: true,
-    actionLabel: 'Approve refill',
-    doneLabel: 'Refill approved',
     href: null,
   },
   {
@@ -1831,8 +1863,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-15T17:00:00.000Z',
     assignedTo: 'ME',
     unread: false,
-    actionLabel: 'Cosign note',
-    doneLabel: 'Note cosigned',
     href: null,
   },
   {
@@ -1845,8 +1875,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-11T17:00:00.000Z',
     assignedTo: 'ME',
     unread: true,
-    actionLabel: 'Cosign note',
-    doneLabel: 'Note cosigned',
     href: null,
   },
   {
@@ -1859,8 +1887,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-12T12:00:00.000Z',
     assignedTo: 'TEAM',
     unread: false,
-    actionLabel: 'Mark done',
-    doneLabel: 'Task closed',
     href: '/orders',
   },
   {
@@ -1873,8 +1899,6 @@ export const MOCK_INBOX_ITEMS: readonly InboxItem[] = [
     dueAt: '2026-08-14T17:00:00.000Z',
     assignedTo: 'TEAM',
     unread: false,
-    actionLabel: 'Mark done',
-    doneLabel: 'Task closed',
     href: null,
   },
 ];

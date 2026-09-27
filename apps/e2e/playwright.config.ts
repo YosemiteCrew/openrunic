@@ -1,6 +1,11 @@
 import { defineConfig, devices, type ReporterDescription } from '@playwright/test';
 
-import { DRILL_COOKIE_SECRET, STORAGE_STATE } from './global-setup.js';
+import {
+  DRILL_COOKIE_SECRET,
+  PORTAL_COOKIE_SECRET,
+  PORTAL_STORAGE_STATE,
+  STORAGE_STATE,
+} from './global-setup.js';
 
 /**
  * The full-day clinical drill.
@@ -14,6 +19,9 @@ import { DRILL_COOKIE_SECRET, STORAGE_STATE } from './global-setup.js';
 
 const PORT = Number.parseInt(process.env.OPENRUNIC_E2E_PORT ?? '3100', 10);
 const BASE_URL = process.env.OPENRUNIC_E2E_BASE_URL ?? `http://127.0.0.1:${String(PORT)}`;
+const PORTAL_PORT = Number.parseInt(process.env.OPENRUNIC_PORTAL_E2E_PORT ?? '3300', 10);
+const PORTAL_BASE_URL =
+  process.env.OPENRUNIC_PORTAL_E2E_BASE_URL ?? `http://127.0.0.1:${String(PORTAL_PORT)}`;
 
 /**
  * Typed explicitly rather than inlined.
@@ -29,6 +37,13 @@ const BASE_URL = process.env.OPENRUNIC_E2E_BASE_URL ?? `http://127.0.0.1:${Strin
 const reporter: ReporterDescription[] = [
   ['list'],
   ['html', { open: 'never', outputFolder: 'playwright-report' }],
+  // The HTML report carries its data as a base64 zip inside index.html, so the
+  // downloaded artifact answers no plain-text search: a full run and an empty
+  // one grep the same (#575). This writes the same run in a form a reviewer -
+  // or the check at the end of scripts/run-drill.mjs - can just read. It lands
+  // in test-results rather than in playwright-report because the HTML reporter
+  // owns that folder and clears it.
+  ['json', { outputFile: 'test-results/drill-report.json' }],
 ];
 if (process.env.CI === 'true') reporter.push(['github']);
 
@@ -74,33 +89,78 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop-1440',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+      testIgnore: /portal\.spec\.ts/,
+      // Stock Chrome for the same reason as the portal project below: Find
+      // available carries a microphone, and bundled headless Chromium crashes
+      // when it asks whether the on-device recogniser is available.
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        viewport: { width: 1440, height: 900 },
+      },
     },
     {
       // Below 1024 the navigation rail collapses behind a Menu button, so this
       // project exercises a genuinely different shell, not just a narrower one.
       name: 'tablet-768',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 768, height: 1024 } },
+      testIgnore: /portal\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        viewport: { width: 768, height: 1024 },
+      },
     },
     {
       name: 'phone-375',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 375, height: 812 } },
+      testIgnore: /portal\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        viewport: { width: 375, height: 812 },
+      },
+    },
+    {
+      name: 'portal-chrome',
+      testMatch: /portal\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: PORTAL_BASE_URL,
+        storageState: PORTAL_STORAGE_STATE,
+        // Bundled headless Chromium crashes when the portal asks whether its
+        // on-device recogniser is available. Stock Chrome answers normally;
+        // the drill workflow installs this system package on every run because
+        // it cannot be restored from the Playwright browser cache.
+        channel: 'chrome',
+        // Without this Chrome on Linux never asks the system speech service for
+        // voices, and the read-aloud scenario finds none. Other platforms
+        // ignore it.
+        launchOptions: { args: ['--enable-speech-dispatcher'] },
+      },
     },
   ],
 
-  webServer: {
-    command: `pnpm --filter web run start --port ${String(PORT)}`,
-    url: BASE_URL,
-    reuseExistingServer: process.env.CI !== 'true',
-    timeout: 120_000,
-    cwd: '../..',
-    env: {
-      NEXT_PUBLIC_API_MODE: 'mock',
-      // `next start` is NODE_ENV=production, and outside development the seal
-      // key has no fallback: without this the server would mint no sessions and
-      // recognise none, which is the correct production behaviour and would
-      // reject the drill's cookie along with everything else.
-      SESSION_COOKIE_SECRET: DRILL_COOKIE_SECRET,
+  webServer: [
+    {
+      command: `pnpm --filter web run start --port ${String(PORT)}`,
+      url: BASE_URL,
+      reuseExistingServer: process.env.CI !== 'true',
+      timeout: 120_000,
+      cwd: '../..',
+      env: {
+        NEXT_PUBLIC_API_MODE: 'mock',
+        SESSION_COOKIE_SECRET: DRILL_COOKIE_SECRET,
+      },
     },
-  },
+    {
+      command: `pnpm --filter portal run start --port ${String(PORTAL_PORT)}`,
+      url: PORTAL_BASE_URL,
+      reuseExistingServer: process.env.CI !== 'true',
+      timeout: 120_000,
+      cwd: '../..',
+      env: {
+        NEXT_PUBLIC_API_MODE: 'live',
+        SESSION_COOKIE_SECRET: PORTAL_COOKIE_SECRET,
+      },
+    },
+  ],
 });

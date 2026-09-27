@@ -5,30 +5,16 @@
 // WHY THIS EXISTS
 //
 // `husky` unconditionally runs `git config core.hooksPath <dir>/_` (husky
-// 9.1.7, index.js line 14). No `--global`, so that is REPOSITORY config - one
-// `pnpm install` in one worktree redirects the hooks for every worktree of the
-// clone at once.
+// 9.1.7, index.js line 14). No `--global`, so that is REPOSITORY config, and a
+// routine `pnpm install` replaces any `core.hooksPath` a contributor had already
+// set for the clone. The replacement is silent: husky's own hooks still run and
+// still pass, so nothing says the earlier setting is gone.
 //
-// That is fine for a machine whose only hooks are husky's. It is not fine for a
-// machine that installs an additional guard by pointing `core.hooksPath` at a
-// directory OUTSIDE the working tree - which is how a check that must not be
-// editable from inside a pull request has to be installed. Any routine install
-// silently disarms it.
-//
-// AND THE DISARM IS SILENT BY CONSTRUCTION, which is why it went unnoticed. The
-// external wrapper chains FORWARD: it runs its own check and then calls
-// `.husky/_/<hook>`, so while it is active both sets of hooks run. `.husky/*`
-// chains nowhere. So after the flip, lint-staged, commitlint, prettier and
-// secretlint all still run and all still pass, and the only thing that stopped
-// happening is a check that prints nothing when it succeeds.
-//
-// WHAT THIS DOES NOT DO: guess where the external hooks live. Deriving
-// `~/.githooks/<repo>` from a repository name would bake a machine-local
-// convention into a tracked file, and a wrong guess restores nothing while
-// reporting success - the same silent-failure shape as the bug. So this reads
-// the value that was there BEFORE husky ran and puts that back. No convention,
-// nothing to keep in sync, and a no-op for anyone who never had it: a fresh
-// clone and CI both read an empty value and get plain husky.
+// WHAT THIS DOES NOT DO: guess what the earlier value was. A wrong guess
+// restores nothing while reporting success - the same silent-failure shape as
+// the bug. So this reads the value that was there BEFORE husky ran and puts that
+// back. No convention, nothing to keep in sync, and a no-op for anyone who never
+// had it: a fresh clone and CI both read an empty value and get plain husky.
 
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
@@ -66,8 +52,8 @@ function main() {
 
   const { status } = git(['config', 'core.hooksPath', before]);
   if (status !== 0) {
-    // Loud rather than silent. A failure here leaves the machine with the guard
-    // disarmed, which is the state this script exists to prevent, so it must
+    // Loud rather than silent. A failure here leaves the earlier setting
+    // replaced, which is the state this script exists to prevent, so it must
     // not be reported as a successful install.
     process.stderr.write(
       `prepare: husky moved core.hooksPath to '${after}' and it could not be put ` +

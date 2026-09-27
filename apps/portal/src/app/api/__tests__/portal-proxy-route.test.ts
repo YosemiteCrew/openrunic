@@ -101,6 +101,28 @@ describe('the authenticated portal proxy', () => {
     );
   });
 
+  it('forwards a dictation session request, and only as a POST', async () => {
+    const platform = vi.fn(() => Promise.resolve(Response.json({})));
+    vi.stubGlobal('fetch', platform);
+
+    const body = JSON.stringify({ language: 'en' });
+    await POST(
+      await request('bff/v0/agent/realtime/sessions', 'POST', body),
+      context('bff', 'v0', 'agent', 'realtime', 'sessions')
+    );
+    expect(platform).toHaveBeenLastCalledWith(
+      new URL('https://api.example.invalid/bff/v0/agent/realtime/sessions'),
+      expect.objectContaining({ method: 'POST', body })
+    );
+
+    platform.mockClear();
+    await GET(
+      await request('bff/v0/agent/realtime/sessions'),
+      context('bff', 'v0', 'agent', 'realtime', 'sessions')
+    );
+    expect(platform).not.toHaveBeenCalled();
+  });
+
   it('maps the allowlisted assistant read without a second prefix', async () => {
     const platform = vi.fn(() => Promise.resolve(Response.json([])));
     vi.stubGlobal('fetch', platform);

@@ -223,18 +223,7 @@ export function ResultReading({
         <p className="or-body or-reading__narrative">{report.narrative}</p>
       ) : null}
 
-      {values === 'loading' ? (
-        <p className="or-small or-muted">{t('results.reading.valuesLoading')}</p>
-      ) : null}
-
-      {values === 'error' ? (
-        <div className="or-cluster">
-          <p className="or-small">{t('results.reading.valuesFailed')}</p>
-          <Button variant="secondary" size="sm" iconLeft="rotate-ccw" onClick={onRetryValues}>
-            {t('common.tryAgain')}
-          </Button>
-        </div>
-      ) : null}
+      <ValuesNotice values={values} onRetry={onRetryValues} />
 
       {report.analytes.length > 0 ? (
         <Table
@@ -252,6 +241,31 @@ export function ResultReading({
       ) : null}
     </Card>
   );
+}
+
+/**
+ * Where the report's values are, while they are not on screen: loading, or
+ * failed with a way to ask again. Nothing once they have arrived.
+ */
+function ValuesNotice({
+  values,
+  onRetry,
+}: Readonly<{ values: AsyncStatus; onRetry: () => void }>): ReactElement | null {
+  const t = useTranslator();
+  if (values === 'loading') {
+    return <p className="or-small or-muted">{t('results.reading.valuesLoading')}</p>;
+  }
+  if (values === 'error') {
+    return (
+      <div className="or-cluster">
+        <p className="or-small">{t('results.reading.valuesFailed')}</p>
+        <Button variant="secondary" size="sm" iconLeft="rotate-ccw" onClick={onRetry}>
+          {t('common.tryAgain')}
+        </Button>
+      </div>
+    );
+  }
+  return null;
 }
 
 /**

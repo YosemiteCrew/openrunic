@@ -2000,18 +2000,19 @@ describe('who may touch it', () => {
   });
 
   /**
-   * A patient-scoped token can read inventory because closed compartments are
-   * not narrowed by compartment (matching Prisma behavior). The write path is
-   * still refused because no role bundle grants the permission.
+   * A patient-scoped token is refused outright. Every inventory spec is
+   * `compartment: 'closed'`, which narrows the reads, but neither storage
+   * implementation consults it on a create - so the write path needs its own
+   * refusal rather than relying on no role bundle granting the permission.
    */
-  it('reads inventory because closed compartments are not narrowed by compartment', async () => {
+  it('refuses a patient-scoped token the stockroom entirely', async () => {
     const { app } = harness();
 
     expect(
       (await post(app, 'receipts', delivery('LOT-A', 1), TOKENS.compartmentAdminA)).status
     ).toBe(403);
     expect((await app.request(READ, { headers: bearer(TOKENS.compartmentAdminA) })).status).toBe(
-      200
+      404
     );
   });
 

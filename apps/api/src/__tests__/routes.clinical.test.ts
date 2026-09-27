@@ -1871,7 +1871,7 @@ describe('a patient-scoped token', () => {
     expect(res.status).toBe(404);
   });
 
-  it('reads the addendum table because closed compartments are not narrowed by compartment', async () => {
+  it('is refused the addendum table outright, since no column narrows it', async () => {
     const { app, dataset } = createTestApp();
     authorise(dataset, PATIENT_ID, OTHER_PATIENT_ID);
     seed(
@@ -1883,11 +1883,10 @@ describe('a patient-scoped token', () => {
 
     const body = await listOf(app, `/bff/v0/notes/${NOTE_ID}/addenda`, TOKENS.portalA);
 
-    // The note is readable because a chart column narrows it. Its addenda are
-    // also readable because the NoteAddendum spec has compartment: 'closed',
-    // which means no compartment filter is applied (matching Prisma behavior).
-    expect(body.data).toHaveLength(1);
-    expect(body.page.total).toBe(1);
+    // The note is readable, because a chart column narrows it. Its addenda are
+    // not, because nothing on that table names a chart.
+    expect(body.data).toEqual([]);
+    expect(body.page.total).toBe(0);
   });
 });
 

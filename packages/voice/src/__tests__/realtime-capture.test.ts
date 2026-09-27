@@ -307,6 +307,7 @@ describe('ending a question', () => {
     const { port, seen } = capture(transport);
     port.start(SESSION);
     const on = handlers[0];
+    on?.listening();
 
     /* The service's own turn detection has already cut the question in two. */
     on?.message(started('a'));
@@ -330,32 +331,23 @@ describe('ending a question', () => {
     ]);
   });
 
-  it('sends no commit when everything has settled, and waits for the transport to end it', () => {
+  it('ends at once, without a commit, when everything has already settled', () => {
     const { transport, handlers, sent, closes } = wire();
     const { port, seen } = capture(transport);
     port.start(SESSION);
 
+    handlers[0]?.listening();
     handlers[0]?.message(started('a'));
     handlers[0]?.message(committed('a'));
     handlers[0]?.message(completed('a', 'when is my visit'));
     port.stop();
 
     expect(sent).toEqual([]);
-    /* Settled so far is not proof that nothing more was said. */
-    expect(seen.at(-1)).toEqual({
-      type: 'heard',
-      id: 'session-1',
-      text: 'when is my visit',
-      final: true,
-    });
-    expect(closes()).toBe(0);
-
-    /* The transport's settle time runs out with nothing more reported. */
-    handlers[0]?.closed();
     expect(seen.at(-1)).toEqual({ type: 'ended', id: 'session-1' });
+    expect(closes()).toBe(1);
   });
 
-  it('keeps the muted connection open when nothing was reported before stop, until it closes', () => {
+  it('keeps a muted connection open when nothing was reported before stop, until it closes', () => {
     const { transport, handlers, sent, closes, mutes } = wire();
     const { port, seen } = capture(transport);
     port.start(SESSION);
@@ -368,6 +360,7 @@ describe('ending a question', () => {
     expect(seen).toEqual([{ type: 'listening', id: 'session-1' }]);
     expect(closes()).toBe(0);
 
+    /* The transport's settle time runs out with nothing reported. */
     handlers[0]?.closed();
     expect(seen).toEqual([
       { type: 'listening', id: 'session-1' },
@@ -375,97 +368,63 @@ describe('ending a question', () => {
     ]);
   });
 
-  it('commits and transcribes speech the service reports only after stop, then ends', () => {
+  it('transcribes every stretch the service reports after that stop, and commits none of them', () => {
     const { transport, handlers, sent, closes } = wire();
     const { port, seen } = capture(transport);
     port.start(SESSION);
     const on = handlers[0];
+    on?.listening();
 
     /* A short question, and stop pressed before the service said it heard it. */
     port.stop();
-    expect(sent).toEqual([]);
-
     on?.message(started('a'));
-    expect(sent).toEqual([{ type: 'input_audio_buffer.commit' }]);
-
     on?.message(committed('a'));
     on?.message(delta('a', 'is it'));
-    expect(closes()).toBe(0);
-
     on?.message(completed('a', 'is it due'));
-    expect(seen).toEqual([
-      { type: 'heard', id: 'session-1', text: 'is it', final: false },
-      { type: 'heard', id: 'session-1', text: 'is it due', final: true },
-      { type: 'ended', id: 'session-1' },
-    ]);
-    expect(closes()).toBe(1);
-  });
-
-  it('sends no second commit for speech reported behind the one stop sent', () => {
-    const { transport, handlers, sent } = wire();
-    const { port, seen } = capture(transport);
-    port.start(SESSION);
-    const on = handlers[0];
-
-    on?.message(started('a'));
-    port.stop();
-    expect(sent).toEqual([{ type: 'input_audio_buffer.commit' }]);
-
-    /* The service had already closed the first stretch itself and heard a
-       second one start. The commit stop sent takes that one, and another
-       would find the buffer empty. */
-    on?.message(committed('a'));
+    /* A second stretch, reported behind the first. */
     on?.message(started('b'));
     on?.message(committed('b'));
-    expect(sent).toEqual([{ type: 'input_audio_buffer.commit' }]);
+    on?.message(completed('b', 'this week'));
 
-    on?.message(completed('a', 'my knee'));
-    on?.message(completed('b', 'still hurts'));
-    expect(seen.at(-1)).toEqual({ type: 'ended', id: 'session-1' });
-  });
-
-  it('sends no commit after stop for speech already committed or settled', () => {
-    const { transport, handlers, sent } = wire();
-    const { port, seen } = capture(transport);
-    port.start(SESSION);
-    const on = handlers[0];
-
-    /* The first stretch is transcribed, which it could only be once committed,
-       though the commit itself was never reported. The second is committed. */
-    on?.message(started('a'));
-    on?.message(completed('a', 'my knee'));
-    on?.message(started('b'));
-    on?.message(committed('b'));
-    port.stop();
-
-    /* The service repeating itself about both stretches. */
-    on?.message(started('a'));
-    on?.message(started('b'));
     expect(sent).toEqual([]);
+    expect(closes()).toBe(0);
+    expect(seen.filter((event) => event.type === 'heard' && event.final)).toEqual([
+      { type: 'heard', id: 'session-1', text: 'is it due', final: true },
+      { type: 'heard', id: 'session-1', text: 'this week', final: true },
+    ]);
 
-    on?.message(completed('b', 'still hurts'));
+    handlers[0]?.closed();
     expect(seen.at(-1)).toEqual({ type: 'ended', id: 'session-1' });
   });
 
-  it('can commit late speech again in the next question', () => {
-    const { transport, handlers, sent } = wire();
+  it('ends at once when stopped before any audio flowed', () => {
+    const { transport, handlers, sent, closes } = wire();
     const { port, seen } = capture(transport);
-
+    /* An earlier question that did get as far as audio. */
+    port.start({ id: 'session-0', language: 'en' });
+    handlers[0]?.listening();
     port.start(SESSION);
-    port.stop();
-    handlers[0]?.message(started('a'));
-    handlers[0]?.message(committed('a'));
-    handlers[0]?.message(completed('a', 'my knee'));
 
-    port.start({ id: 'session-2', language: 'en' });
     port.stop();
-    handlers[1]?.message(started('a'));
 
-    expect(sent).toEqual([
-      { type: 'input_audio_buffer.commit' },
-      { type: 'input_audio_buffer.commit' },
-    ]);
+    expect(sent).toEqual([]);
     expect(seen.at(-1)).toEqual({ type: 'ended', id: 'session-1' });
+    expect(closes()).toBe(2);
+  });
+
+  it('under manual turn detection, ends once the item it made settles, after audio flowed', () => {
+    const { transport, handlers, sent, closes } = wire(['en'], 'manual');
+    const { port, seen } = capture(transport);
+    port.start(SESSION);
+    handlers[0]?.listening();
+
+    port.stop();
+    expect(sent).toEqual([{ type: 'input_audio_buffer.commit' }]);
+    handlers[0]?.message(committed('c'));
+    handlers[0]?.message(completed('c', 'what do I owe'));
+
+    expect(seen.at(-1)).toEqual({ type: 'ended', id: 'session-1' });
+    expect(closes()).toBe(1);
   });
 
   it('commits for speech the service heard start but has not transcribed a word of', () => {
@@ -501,22 +460,15 @@ describe('ending a question', () => {
   });
 
   it('ignores bookkeeping events that name no item', () => {
-    const { transport, handlers, sent } = wire();
+    const { transport, handlers } = wire();
     const { port, seen } = capture(transport);
     port.start(SESSION);
 
     handlers[0]?.message({ type: 'input_audio_buffer.speech_started' });
     handlers[0]?.message({ type: 'input_audio_buffer.committed' });
     port.stop();
-    handlers[0]?.message({ type: 'input_audio_buffer.speech_started' });
-    expect(sent).toEqual([]);
 
-    /* Nothing was left waiting on them: the first words to settle end it. */
-    handlers[0]?.message(completed('a', 'my knee'));
-    expect(seen).toEqual([
-      { type: 'heard', id: 'session-1', text: 'my knee', final: true },
-      { type: 'ended', id: 'session-1' },
-    ]);
+    expect(seen).toEqual([{ type: 'ended', id: 'session-1' }]);
   });
 
   it('does nothing on stop when nothing is open', () => {
@@ -616,7 +568,7 @@ describe('stop and the microphone', () => {
     connection.handlers[0]?.listening();
     port.stop();
     expect(connection.mutes()).toBe(0);
-    // Nothing uncommitted, and no way to turn the microphone off but closing: it ends here.
+    // Server turn detection with nothing uncommitted: the session simply ends.
     expect(connection.sent).toEqual([]);
     expect(seen.at(-1)).toEqual({ type: 'ended', id: SESSION.id });
   });

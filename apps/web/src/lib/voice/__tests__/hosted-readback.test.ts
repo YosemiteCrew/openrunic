@@ -179,4 +179,74 @@ describe('createWebHostedSynthesiser', () => {
     expect(handlers.failed).toHaveBeenCalled();
     expect(handlers.started).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['ended', 'finished'],
+    ['error', 'failed'],
+  ] as const)('reports audio %s', async (event, handler) => {
+    process.env.NEXT_PUBLIC_HOSTED_VOICE_ENDPOINT = 'https://tts.example.com/synthesize';
+    process.env.NEXT_PUBLIC_HOSTED_VOICE_AGREEMENT = 'Executed voice-processing agreement';
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: () => Promise.resolve(new Blob(['audio data'], { type: 'audio/mpeg' })),
+    });
+    let audio: { onended: (() => void) | null; onerror: (() => void) | null } | null = null;
+    const rememberAudio = (value: NonNullable<typeof audio>) => {
+      audio = value;
+    };
+    globalThis.Audio = class {
+      play = vi.fn().mockResolvedValue(undefined);
+      pause = vi.fn();
+      src = '';
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      constructor() {
+        rememberAudio(this);
+      }
+    } as unknown as typeof Audio;
+    const handlers: PlaybackHandlers = {
+      started: vi.fn(),
+      finished: vi.fn(),
+      failed: vi.fn(),
+    };
+
+    createWebHostedSynthesiser()!.play({ text: 'Hello', language: 'en-GB' }, handlers);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    if (event === 'ended') audio!.onended!();
+    else audio!.onerror!();
+
+    expect(handlers[handler]).toHaveBeenCalledOnce();
+  });
+
+  it('aborts and pauses playback when stopped', async () => {
+    process.env.NEXT_PUBLIC_HOSTED_VOICE_ENDPOINT = 'https://tts.example.com/synthesize';
+    process.env.NEXT_PUBLIC_HOSTED_VOICE_AGREEMENT = 'Executed voice-processing agreement';
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: () => Promise.resolve(new Blob(['audio data'], { type: 'audio/mpeg' })),
+    });
+    const pause = vi.fn();
+    globalThis.Audio = class {
+      play = vi.fn().mockResolvedValue(undefined);
+      pause = pause;
+      src = '';
+      onended = null;
+      onerror = null;
+    } as unknown as typeof Audio;
+    const handlers: PlaybackHandlers = {
+      started: vi.fn(),
+      finished: vi.fn(),
+      failed: vi.fn(),
+    };
+
+    const playback = createWebHostedSynthesiser()!.play(
+      { text: 'Hello', language: 'en-GB' },
+      handlers
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    playback.stop();
+
+    expect(pause).toHaveBeenCalledOnce();
+  });
 });

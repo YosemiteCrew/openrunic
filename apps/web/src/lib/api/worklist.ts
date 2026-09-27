@@ -14,6 +14,7 @@ import {
   MOCK_PATIENT_PROBLEMS,
   MOCK_RESULTS,
 } from './mock/fixtures';
+import { MOCK_ACTING_USER } from './mock/records';
 import { paginate } from './pagination';
 import type {
   ApiClient,
@@ -298,6 +299,14 @@ export interface ResultReport {
    */
   orderedBy: string | null;
   /**
+   * Who signed the report off, as recorded: `reviewedById` on a live row.
+   *
+   * Null while it is unsigned, and on a signed report that names nobody. Not
+   * `orderedBy`: the clinician who asked for a test and the one who signed its
+   * result are two facts, and the pane that says "Signed by" names this one.
+   */
+  signedBy: string | null;
+  /**
    * Whose queue this sits in, null where nothing records it.
    *
    * Assignment is a `Task` fact - `assigneeType`, `assigneeUserId`,
@@ -315,6 +324,20 @@ export interface ResultReport {
   analytes: ResultAnalyte[];
   /** Imaging and procedure reports read as prose rather than a value table. */
   narrative: string | null;
+}
+
+/**
+ * A sign-off as it was recorded: when, by whom, and the note typed with it.
+ *
+ * `note` is only ever non-null from a client whose `notes` is true.
+ */
+export interface ResultSignature {
+  /** ISO instant. */
+  at: string;
+  /** The signer's staff id, null where the record names nobody. */
+  by: string | null;
+  /** The addendum a clinician typed while signing, when they typed one. */
+  note: string | null;
 }
 
 /**
@@ -383,6 +406,7 @@ export function toResultReport(dto: DiagnosticReportDto): ResultReport | null {
     flag: dto.abnormalFlag,
     status: dto.reviewedAt === null ? 'UNREVIEWED' : 'SIGNED',
     performer: dto.performingLabName,
+    signedBy: dto.reviewedById,
     /* Neither is on the report: the ordering clinician is on the service
        request one join away, and assignment is a `Task` fact. Null is the row
        rather than a placeholder for it, and the screen renders both as absent. */
@@ -610,8 +634,38 @@ export interface WorklistClient {
      * mention is the one shape this screen must not take.
      */
     analytes: (reportId: string) => Promise<ListResponse<ResultAnalyte>>;
+    /**
+     * Signs one report off and answers with the sign-off as recorded.
+     *
+     * Rejects when nothing was recorded, and the screen marks nothing signed
+     * until it resolves: a toast saying "signed" over a report the API still
+     * holds as unreviewed is the one thing this queue must not show. `now` is
+     * the instant a fixture client stamps; the API stamps its own.
+     */
+    sign: (report: ResultReport, note: string | null, now: string) => Promise<ResultSignature>;
+    /**
+     * Whether a sign-off can carry a note. The API's review records who and
+     * when and nothing typed, so a live client offers no note rather than
+     * accepting one it would drop.
+     */
+    notes: boolean;
   };
-  inbox: { list: (query?: InboxListQuery) => Promise<InboxPage> };
+  inbox: {
+    list: (query?: InboxListQuery) => Promise<InboxPage>;
+    /**
+     * Whether this client can record the row's disposition.
+     *
+     * A row it cannot is offered no button, because a button that only moves
+     * the row off the screen tells the reader the work is done.
+     */
+    completes: (item: InboxItem) => boolean;
+    /** Records the row's disposition. Rejects when nothing was recorded. */
+    complete: (item: InboxItem) => Promise<void>;
+    /** Moves a pooled row to the reader, or null where the client cannot record that. */
+    claim: ((item: InboxItem) => Promise<void>) | null;
+    /** Puts a finished or claimed row back, or null where the client cannot. */
+    reopen: ((item: InboxItem) => Promise<void>) | null;
+  };
 }
 
 export interface WorklistData {
@@ -649,11 +703,23 @@ export function createWorklistClient(data: Partial<WorklistData> = {}): Worklist
       list: (query) => Promise.resolve({ ...page(filterResults(results, query)), refused: 0 }),
       analytes: (reportId) =>
         Promise.resolve(page(results.find((report) => report.id === reportId)?.analytes ?? [])),
+      /* The demo's sign-off is its own record: the acting clinician, at the
+         instant the screen reads as now, with the note as typed. */
+      sign: (_report, note, now) => Promise.resolve({ at: now, by: MOCK_ACTING_USER, note }),
+      notes: true,
     },
     /* The fixture rows are the whole inbox and every one of them is typed, so
        nothing is refused here. The field still travels: a screen reading it
-       only in live mode would be a screen nothing in the demo build exercises. */
-    inbox: { list: (query) => Promise.resolve({ ...page(filterInbox(inbox, query)), refused: 0 }) },
+       only in live mode would be a screen nothing in the demo build exercises.
+       Every disposition is the screen's own state here, so every one is
+       offered and every one can be put back. */
+    inbox: {
+      list: (query) => Promise.resolve({ ...page(filterInbox(inbox, query)), refused: 0 }),
+      completes: () => true,
+      complete: () => Promise.resolve(),
+      claim: () => Promise.resolve(),
+      reopen: () => Promise.resolve(),
+    },
   };
 }
 
@@ -763,6 +829,28 @@ function noResults(pageSize: number): ResultPage {
 }
 
 /**
+ * The page, with the tasks past the one page of them that was read counted
+ * into its total.
+ *
+ * The report ids come from one page of `RESULT` tasks, so a clinician holding
+ * more than {@link RESULT_TASK_PAGE_SIZE} open results sees the first page of
+ * them. The report read cannot know about the rest - they were never asked for
+ * - so without this the statement under the queue would read the shown rows as
+ * the whole of it. One task per report is the assumption: it is what the task
+ * stream is for, and the residual is stated as the tasks it came from.
+ */
+function withUnreadTasks(results: ResultPage, tasks: ListResponse<TaskDto>): ResultPage {
+  const beyond = tasks.page.total - tasks.data.length;
+  if (beyond <= 0) return results;
+  const total = results.page.total + beyond;
+  const { pageSize } = results.page;
+  return {
+    ...results,
+    page: { ...results.page, total, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 1 },
+  };
+}
+
+/**
  * The results half of {@link WorklistClient}, over `GET /bff/v0/results`.
  *
  * `userId` is the signed-in clinician, or null where the caller has no name -
@@ -789,8 +877,13 @@ export function liveResults(client: ApiClient, userId: string | null): WorklistC
       // Not a query worth sending: `ids` is refused empty by the route, and an
       // absent `ids` would widen this to every result in the practice, which is
       // the one answer a ME filter must never give.
-      if (ids.length === 0) return noResults(query.pageSize ?? RESULT_TASK_PAGE_SIZE);
-      return toResultPage(await client.results.list(toReportQuery(query, ids)));
+      if (ids.length === 0) {
+        return withUnreadTasks(noResults(query.pageSize ?? RESULT_TASK_PAGE_SIZE), tasks);
+      }
+      return withUnreadTasks(
+        toResultPage(await client.results.list(toReportQuery(query, ids))),
+        tasks
+      );
     },
     analytes: (reportId) =>
       client.results
@@ -799,6 +892,13 @@ export function liveResults(client: ApiClient, userId: string | null): WorklistC
           data: response.data.map(toResultAnalyte),
           page: response.page,
         })),
+    /* `/review` records the signer from the credential and the time from its
+       own clock, and answers with the report as it now stands. */
+    sign: async (report, _note, now) => {
+      const reviewed = await client.results.review(report.id);
+      return { at: reviewed.reviewedAt ?? now, by: reviewed.reviewedById, note: null };
+    },
+    notes: false,
   };
 }
 
@@ -910,11 +1010,49 @@ export function toTaskQuery(query: InboxListQuery, userId: string): TaskListQuer
  */
 const INBOX_PAGE_SIZE = 100;
 
+/**
+ * The dispositions the API records by itself, over `POST /bff/v0/tasks/{id}/complete`.
+ *
+ * One kind only: closing a general task. Approving a refill, cosigning a note
+ * and answering a message each change something other than the task, and
+ * closing the task alone would tell the reader it had been done - so those rows
+ * are read here and offered no button. The API has no route to claim a pooled
+ * task or to reopen a finished one, so neither is offered either.
+ *
+ * None of this needs the caller's id: the route takes the actor from the
+ * credential, which is why the module-level client below carries these too.
+ */
+function liveInboxWrites(client: ApiClient): Omit<WorklistClient['inbox'], 'list'> {
+  return {
+    completes: (item) => item.stream === 'TASKS',
+    complete: async (item) => {
+      await client.tasks.complete(item.id);
+    },
+    claim: null,
+    reopen: null,
+  };
+}
+
 /** The inbox half of {@link WorklistClient}, over `GET /bff/v0/tasks`. */
 export function liveInbox(client: ApiClient, userId: string): WorklistClient['inbox'] {
   return {
     list: (query = {}) =>
       client.tasks.list(toTaskQuery(query, userId)).then((page) => toInboxPage(page, userId)),
+    ...liveInboxWrites(client),
+  };
+}
+
+/**
+ * The module-level client in live mode. The inbox's rows wait for a name - see
+ * {@link worklistFor} - but its writes do not, so a screen writes through this
+ * whichever client its reads came from.
+ */
+function liveWorklist(): WorklistClient {
+  const fixtures = createWorklistClient();
+  return {
+    orders: liveOrders(api),
+    results: liveResults(api, null),
+    inbox: { ...fixtures.inbox, ...liveInboxWrites(api) },
   };
 }
 
@@ -930,9 +1068,7 @@ export function liveInbox(client: ApiClient, userId: string): WorklistClient['in
  * screen it is there to demonstrate.
  */
 export const worklist: WorklistClient =
-  API_MODE === 'live'
-    ? { ...createWorklistClient(), orders: liveOrders(api), results: liveResults(api, null) }
-    : createWorklistClient();
+  API_MODE === 'live' ? liveWorklist() : createWorklistClient();
 
 /**
  * The app's client, once the caller has a name.

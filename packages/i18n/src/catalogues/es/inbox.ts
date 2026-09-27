@@ -84,6 +84,7 @@ export const inbox: Messages = {
   'inbox.list.assigned': 'Asignado a usted',
   'inbox.list.undo': 'Deshacer',
 
+  'inbox.list.notRecorded': 'No se registró',
   'inbox.empty.streamTitle': 'No hay {stream} en espera',
   'inbox.empty.streamMessage':
     'Nada en este flujo lo necesita. Quite el filtro para ver el resto de la cola.',

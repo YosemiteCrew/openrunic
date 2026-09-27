@@ -26,6 +26,8 @@ export interface SignNoteModalProps {
   patientName: string;
   onCancel: () => void;
   onConfirm: (note: string) => void;
+  /** Holds the signature back while one is outstanding or the values are not on screen. */
+  disabled?: boolean;
 }
 
 export function SignNoteModal({
@@ -34,6 +36,7 @@ export function SignNoteModal({
   patientName,
   onCancel,
   onConfirm,
+  disabled,
 }: Readonly<SignNoteModalProps>): ReactElement {
   const t = useTranslator();
   const [note, setNote] = useState('');
@@ -55,6 +58,7 @@ export function SignNoteModal({
           </Button>
           <Button
             iconLeft="pen-line"
+            disabled={disabled}
             onClick={() => {
               onConfirm(note.trim());
               setNote('');

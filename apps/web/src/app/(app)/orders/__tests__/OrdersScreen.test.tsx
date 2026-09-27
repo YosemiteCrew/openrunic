@@ -17,10 +17,11 @@ vi.mock('next/navigation', () => ({
 
 function failing(): WorklistClient {
   const fail = () => Promise.reject(new ApiError('offline', { kind: 'network' }));
+  const base = createWorklistClient();
   return {
     orders: { list: fail },
-    results: { list: fail, analytes: fail },
-    inbox: { list: fail },
+    results: { ...base.results, list: fail, analytes: fail },
+    inbox: { ...base.inbox, list: fail },
   };
 }
 
@@ -208,5 +209,24 @@ describe('OrdersScreen', () => {
 
     expect(await screen.findByText('No connection to the server')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+});
+
+/* Without a fixed instant the ledger reads the clinic clock, which in the demo
+   build is the fixtures' own instant and against the API is the wall clock. So
+   a default render here says exactly what a fixed-instant one does, ages
+   included; a screen still defaulting to the fixtures' day would pass this too,
+   which is why the live half is the clock's own test. */
+describe('OrdersScreen, its own clock', () => {
+  it('ages every order against the clinic clock when no instant is fixed', async () => {
+    const fixed = render(<OrdersScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByText(/Unacknowledged 1 d/);
+    const expected = document.body.textContent;
+    fixed.unmount();
+
+    render(<OrdersScreen client={createWorklistClient()} />);
+    await screen.findByText(/Unacknowledged 1 d/);
+
+    expect(document.body.textContent).toBe(expected);
   });
 });

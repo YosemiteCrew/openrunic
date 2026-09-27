@@ -7,6 +7,7 @@ import {
   MOCK_ORDERS,
   MOCK_RESULTS,
 } from '@/lib/api/mock/fixtures';
+import { MOCK_ACTING_USER } from '@/lib/api/mock/records';
 import {
   createWorklistClient,
   filterInbox,
@@ -125,5 +126,32 @@ describe('createWorklistClient', () => {
     expect(page.data).toHaveLength(2);
     expect(page.page.total).toBe(MOCK_ORDERS.length);
     expect(page.refused).toBe(0);
+  });
+
+  /* The demo's sign-off is its own record, and it says so the way the API's
+     does: who signed, when, and the note as typed. The signer is the acting
+     clinician rather than whoever ordered the test. */
+  it('records a sign-off as the acting clinician, at the instant it was given', async () => {
+    const client = createWorklistClient();
+    const report = MOCK_RESULTS.find((row) => row.orderedBy !== MOCK_ACTING_USER);
+    if (!report) throw new Error('every fixture result was ordered by the acting clinician');
+
+    await expect(client.results.sign(report, 'Repeat in a week', MOCK_NOW)).resolves.toEqual({
+      at: MOCK_NOW,
+      by: MOCK_ACTING_USER,
+      note: 'Repeat in a week',
+    });
+    expect(client.results.notes).toBe(true);
+  });
+
+  it('records every inbox disposition, and can put each one back', async () => {
+    const client = createWorklistClient();
+    const [item] = MOCK_INBOX_ITEMS;
+    if (!item) throw new Error('MOCK_INBOX_ITEMS is empty');
+
+    expect(client.inbox.completes(item)).toBe(true);
+    await expect(client.inbox.complete(item)).resolves.toBeUndefined();
+    await expect(client.inbox.claim?.(item)).resolves.toBeUndefined();
+    await expect(client.inbox.reopen?.(item)).resolves.toBeUndefined();
   });
 });

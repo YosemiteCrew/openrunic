@@ -109,6 +109,7 @@ export const inbox: Messages = {
   'inbox.list.undo': 'Undo',
 
   /* ------------------------------------------------------- the empty states */
+  'inbox.list.notRecorded': 'Not recorded',
   'inbox.empty.streamTitle': 'No {stream} waiting',
   'inbox.empty.streamMessage':
     'Nothing in this stream needs you. Clear the filter to see the rest of the queue.',

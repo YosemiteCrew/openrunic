@@ -24,8 +24,16 @@ export interface InboxListProps {
   now: string;
   /** Runs the row's primary action: approve, cosign, reply, close. */
   onComplete: (item: InboxItem) => void;
-  /** Moves a team-pool item to the signed-in clinician. */
-  onClaim: (item: InboxItem) => void;
+  /**
+   * Whether the row's primary action can be recorded. A row where it cannot is
+   * offered no button: one that only moved the row off the screen would tell
+   * the reader the work was done.
+   */
+  completes: (item: InboxItem) => boolean;
+  /** Moves a team-pool item to the signed-in clinician. Absent where that cannot be recorded. */
+  onClaim?: (item: InboxItem) => void;
+  /** True while a disposition is outstanding, so a second press cannot send another. */
+  busy?: boolean;
   /** Ids already claimed in this session, so the row stops offering it. */
   claimedIds: string[];
   /** Names a row's patient. Resolved by the screen, one read for the page. */
@@ -36,7 +44,9 @@ export function InboxList({
   items,
   now,
   onComplete,
+  completes,
   onClaim,
+  busy,
   claimedIds,
   patientNamed,
 }: Readonly<InboxListProps>): ReactElement {
@@ -97,14 +107,22 @@ export function InboxList({
             </span>
 
             <span className="or-inbox__actions">
-              <Button variant="secondary" size="sm" onClick={() => onComplete(item)}>
-                {t(INBOX_STREAM_ACTION_KEYS[item.stream])}
-              </Button>
-              {mine ? null : (
+              {completes(item) ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => onComplete(item)}
+                >
+                  {t(INBOX_STREAM_ACTION_KEYS[item.stream])}
+                </Button>
+              ) : null}
+              {mine || onClaim === undefined ? null : (
                 <Button
                   variant="ghost"
                   size="sm"
                   iconLeft="user-round"
+                  disabled={busy}
                   onClick={() => onClaim(item)}
                 >
                   {t('inbox.list.assignToMe')}

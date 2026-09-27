@@ -7,7 +7,14 @@ import type { BadgeTone, TableColumn } from '@openrunic/ui';
 import { useMemo } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
-import type { PatientLookup, ProviderLookup, ResultAnalyte, ResultReport } from '@/lib/api';
+import type {
+  AsyncStatus,
+  PatientLookup,
+  ProviderLookup,
+  ResultAnalyte,
+  ResultReport,
+  ResultSignature,
+} from '@/lib/api';
 import { formatDate, formatDateTime, formatMrn, formatName, formatVital } from '@/lib/format';
 import { counted } from '@/lib/i18n/counted';
 import type { CountedMessage } from '@/lib/i18n/counted';
@@ -35,18 +42,27 @@ const STATE_TONE: Record<string, BadgeTone> = {
   neutral: 'neutral',
 };
 
-export interface SignedNote {
-  /** ISO instant. */
-  at: string;
-  /** The addendum a clinician typed while signing, when they typed one. */
-  note: string | null;
-}
+/** A sign-off made on this screen, as it was recorded. */
+export type SignedNote = ResultSignature;
 
 export interface ResultReadingProps {
   report: ResultReport;
   signed: SignedNote | null;
   onSign: () => void;
   onSignWithNote: () => void;
+  /**
+   * Whether a sign-off here can carry a note. Where it cannot, the pane offers
+   * none rather than taking one it would drop.
+   */
+  notes: boolean;
+  /**
+   * Where the report's values are. Sign-off waits for `success`: a report
+   * signed while its values were loading, or after they failed to load, was
+   * signed without being read.
+   */
+  values: AsyncStatus;
+  /** Asks for the values again after they failed to load. */
+  onRetryValues: () => void;
   /** Fixed "now" for the age line. */
   now: string;
   /**
@@ -85,6 +101,9 @@ export function ResultReading({
   signed,
   onSign,
   onSignWithNote,
+  notes,
+  values,
+  onRetryValues,
   now,
   unshownAnalytes = 0,
   patientNamed,
@@ -93,6 +112,11 @@ export function ResultReading({
   const t = useTranslator();
   const patient = patientNamed(report.patientId);
   const isSigned = report.status === 'SIGNED' || signed !== null;
+  /* A sign-off made here names whoever it recorded; one made elsewhere names
+     the report's own signer. Never the ordering clinician: they asked for the
+     test and may never have seen its result. */
+  const signer = signed === null ? report.signedBy : signed.by;
+  const readable = values === 'success';
   const columns = useMemo<TableColumn[]>(
     () => COLUMNS.map(({ headerKey, ...column }) => ({ ...column, header: t(headerKey) })),
     [t]
@@ -115,21 +139,28 @@ export function ResultReading({
                 {signed
                   ? t('results.reading.signedAtBy', {
                       at: formatDateTime(t, signed.at, 'dense'),
-                      clinician: clinicianName(t, providerNamed, report.orderedBy),
+                      clinician: clinicianName(t, providerNamed, signer),
                     })
                   : t('results.reading.signedBy', {
-                      clinician: clinicianName(t, providerNamed, report.orderedBy),
+                      clinician: clinicianName(t, providerNamed, signer),
                     })}
               </span>
             </>
           ) : (
             <>
-              <Button iconLeft="pen-line" onClick={onSign}>
+              <Button iconLeft="pen-line" onClick={onSign} disabled={!readable}>
                 {t('results.reading.sign')}
               </Button>
-              <Button variant="secondary" iconLeft="message-square" onClick={onSignWithNote}>
-                {t('results.reading.signWithNote')}
-              </Button>
+              {notes ? (
+                <Button
+                  variant="secondary"
+                  iconLeft="message-square"
+                  onClick={onSignWithNote}
+                  disabled={!readable}
+                >
+                  {t('results.reading.signWithNote')}
+                </Button>
+              ) : null}
               <Button variant="ghost" href="/orders/new" iconLeft="circle-plus">
                 {t('results.reading.followUp')}
               </Button>
@@ -190,6 +221,19 @@ export function ResultReading({
         <p className="or-body or-reading__narrative">{report.narrative}</p>
       ) : null}
 
+      {values === 'loading' ? (
+        <p className="or-small or-muted">{t('results.reading.valuesLoading')}</p>
+      ) : null}
+
+      {values === 'error' ? (
+        <div className="or-cluster">
+          <p className="or-small">{t('results.reading.valuesFailed')}</p>
+          <Button variant="secondary" size="sm" iconLeft="rotate-ccw" onClick={onRetryValues}>
+            {t('common.tryAgain')}
+          </Button>
+        </div>
+      ) : null}
+
       {report.analytes.length > 0 ? (
         <Table
           columns={columns}
@@ -208,7 +252,8 @@ export function ResultReading({
 }
 
 /**
- * The ordering clinician, or that nobody is recorded.
+ * A clinician by id - the one who ordered, or the one who signed - or that
+ * nobody is recorded.
  *
  * Two absences, one word. The report may carry no service request behind it at
  * all - every live row until that join lands (#535) - and the directory read

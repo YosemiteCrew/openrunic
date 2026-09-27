@@ -13,13 +13,15 @@ import { AppShell } from '@/components/shell';
 import { AsyncBoundary, Toast, isEmptyList } from '@/components/state';
 import {
   isBulkSignable,
-  MOCK_NOW,
+  useMutation,
   usePatientNames,
   useProviderNames,
   useResultAnalytes,
   useResults,
+  worklist,
 } from '@/lib/api';
 import type { Assignment, ResultFlag, ResultPage, ResultReport, WorklistClient } from '@/lib/api';
+import { clinicNow } from '@/lib/api/chart';
 import { formatName } from '@/lib/format';
 import { formatCount } from '@openrunic/i18n';
 
@@ -111,6 +113,18 @@ const BATCH_SIGNED: CountedMessage = {
   otherKey: 'results.bulk.signedOther',
 };
 
+/** The part of a batch that was not recorded, and so is still in the queue. */
+const BATCH_UNSIGNED: CountedMessage = {
+  oneKey: 'results.bulk.unsignedOne',
+  otherKey: 'results.bulk.unsignedOther',
+};
+
+interface Notice {
+  tone: 'success' | 'danger';
+  title: string;
+  message: string;
+}
+
 interface Signing {
   report: ResultReport;
   withNote: boolean;
@@ -152,7 +166,11 @@ function QueueStatement({ page }: Readonly<{ page: ResultPage }>): ReactElement 
 export interface ResultsScreenProps {
   /** Injectable for tests. Defaults to the app's worklist client. */
   client?: WorklistClient;
-  /** Fixed "now", so a signature timestamp is deterministic. */
+  /**
+   * Fixed "now", so a signature timestamp is deterministic. Defaults to the
+   * clinic's clock: the fixtures' instant in the demo build, the wall clock
+   * against the API.
+   */
   now?: string;
 }
 
@@ -165,72 +183,83 @@ export interface ResultsScreenProps {
 function useResultCommands({
   selected,
   bulkCandidates,
+  notes,
   requestSign,
   setAssignment,
   setBulkOpen,
 }: Readonly<{
   selected: ResultReport | null;
   bulkCandidates: readonly ResultReport[];
+  /** Whether a sign-off can carry a note; the palette offers no command the pane does not. */
+  notes: boolean;
   requestSign: (report: ResultReport | null, withNote: boolean) => void;
   setAssignment: (assignment: Assignment) => void;
   setBulkOpen: (open: boolean) => void;
 }>): Command[] {
   const t = useTranslator();
   return useMemo<Command[]>(
-    () => [
-      {
-        id: 'results.sign',
-        group: 'actions',
-        label: t('results.command.sign'),
-        keywords: searchWords(t('results.command.signKeywords')),
-        icon: 'pen-line',
-        perform: () => requestSign(selected, false),
-      },
-      {
-        id: 'results.sign-note',
-        group: 'actions',
-        label: t('results.command.signNote'),
-        keywords: searchWords(t('results.command.signNoteKeywords')),
-        icon: 'message-square',
-        perform: () => requestSign(selected, true),
-      },
-      {
-        id: 'results.bulk-sign',
-        group: 'actions',
-        label: t('results.command.bulkSign'),
-        keywords: searchWords(t('results.command.bulkSignKeywords')),
-        icon: 'check-check',
-        perform: () => setBulkOpen(bulkCandidates.length > 0),
-      },
-      {
-        id: 'results.mine',
-        group: 'actions',
-        label: t('results.command.mine'),
-        keywords: searchWords(t('results.command.mineKeywords')),
-        icon: 'user-round',
-        perform: () => setAssignment('ME'),
-      },
-      {
-        id: 'results.team',
-        group: 'actions',
-        label: t('results.command.team'),
-        keywords: searchWords(t('results.command.teamKeywords')),
-        icon: 'users',
-        perform: () => setAssignment('TEAM'),
-      },
-    ],
+    () => {
+      const all: Command[] = [
+        {
+          id: 'results.sign',
+          group: 'actions',
+          label: t('results.command.sign'),
+          keywords: searchWords(t('results.command.signKeywords')),
+          icon: 'pen-line',
+          perform: () => requestSign(selected, false),
+        },
+        {
+          id: 'results.sign-note',
+          group: 'actions',
+          label: t('results.command.signNote'),
+          keywords: searchWords(t('results.command.signNoteKeywords')),
+          icon: 'message-square',
+          perform: () => requestSign(selected, true),
+        },
+        {
+          id: 'results.bulk-sign',
+          group: 'actions',
+          label: t('results.command.bulkSign'),
+          keywords: searchWords(t('results.command.bulkSignKeywords')),
+          icon: 'check-check',
+          perform: () => setBulkOpen(bulkCandidates.length > 0),
+        },
+        {
+          id: 'results.mine',
+          group: 'actions',
+          label: t('results.command.mine'),
+          keywords: searchWords(t('results.command.mineKeywords')),
+          icon: 'user-round',
+          perform: () => setAssignment('ME'),
+        },
+        {
+          id: 'results.team',
+          group: 'actions',
+          label: t('results.command.team'),
+          keywords: searchWords(t('results.command.teamKeywords')),
+          icon: 'users',
+          perform: () => setAssignment('TEAM'),
+        },
+      ];
+      return notes ? all : all.filter((command) => command.id !== 'results.sign-note');
+    },
     /* The two setters are `useState`'s own and stable, but they arrive here as
        parameters rather than from a `useState` call this hook can see, so they
        are named rather than assumed. */
-    [t, selected, bulkCandidates.length, requestSign, setAssignment, setBulkOpen]
+    [t, selected, bulkCandidates.length, notes, requestSign, setAssignment, setBulkOpen]
   );
 }
 
 export function ResultsScreen({
   client,
-  now = MOCK_NOW,
+  now: fixedNow,
 }: Readonly<ResultsScreenProps>): ReactElement {
   const t = useTranslator();
+  const [now] = useState(() => fixedNow ?? clinicNow());
+  /* Writes go through the client the reads came from. In live mode that is the
+     module-level one: a sign-off names its signer from the credential, so it
+     does not wait for `/bff/v0/me` the way the ME filter does. */
+  const writer = client ?? worklist;
   /* The clinician's own sign-off queue is what this screen is for, and every
      client can now answer it: over fixtures from the row, and over the API from
      the `RESULT` task that carries the assignment (#535). */
@@ -239,7 +268,7 @@ export function ResultsScreen({
   const [signed, setSigned] = useState<Record<string, SignedNote>>({});
   const [signing, setSigning] = useState<Signing | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
+  const [toast, setToast] = useState<Notice | null>(null);
 
   const results = useResults(
     { pageSize: PAGE_SIZE, ...(assignment ? { assignedTo: assignment } : {}) },
@@ -275,6 +304,10 @@ export function ResultsScreen({
      the list, because one call per row is N+1 on a queue built to be scanned
      and the values of a report nobody opened are never looked at. */
   const analytes = useResultAnalytes(selected?.id ?? null, { client });
+  /* Sign-off waits until the values are on screen. The list does not carry
+     them, so while they load - or after they fail to - the pane would show a
+     report with nothing in it and still offer to sign it. */
+  const readable = analytes.status === 'success';
   const reading =
     selected && analytes.data ? { ...selected, analytes: analytes.data.data } : selected;
   /* What the laboratory reported and this page of the report does not hold. The
@@ -284,28 +317,63 @@ export function ResultsScreen({
     ? Math.max(analytes.data.page.total - analytes.data.data.length, 0)
     : 0;
 
+  /* Nothing is marked signed until the client says it was recorded. The row
+     stays in the queue on a refusal, and the toast says so. */
+  const signOff = useMutation((report: ResultReport, note: string | null) =>
+    writer.results.sign(report, note, now)
+  );
   const signOne = useCallback(
-    (report: ResultReport, note: string | null) => {
-      setSigned((previous) => ({ ...previous, [report.id]: { at: now, note } }));
+    async (report: ResultReport, note: string | null) => {
+      const outcome = await signOff.run(report, note);
       setSigning(null);
+      if (!outcome.ok) {
+        setToast({
+          tone: 'danger',
+          title: t('results.signFailed.title', { panel: report.panel }),
+          message: t('results.signFailed.message'),
+        });
+        return;
+      }
+      setSigned((previous) => ({ ...previous, [report.id]: outcome.value }));
       setToast({
+        tone: 'success',
         title: t('results.signed.title', { panel: report.panel }),
-        message: note ? t('results.signed.messageWithNote') : t('results.signed.message'),
+        message: outcome.value.note
+          ? t('results.signed.messageWithNote')
+          : t('results.signed.message'),
       });
     },
-    [t, now]
+    [t, signOff]
   );
 
-  const signBulk = useCallback(() => {
-    const stamped: Record<string, SignedNote> = {};
-    for (const report of bulkCandidates) stamped[report.id] = { at: now, note: null };
-    setSigned((previous) => ({ ...previous, ...stamped }));
+  /* Each report is its own sign-off, so a batch can half succeed. What was
+     recorded is marked; what was not stays in the queue and is counted. Settled
+     rather than awaited as one, so a single refusal cannot hide the rest. */
+  const [batching, setBatching] = useState(false);
+  const signBulk = useCallback(async () => {
+    const reports = bulkCandidates;
+    setBatching(true);
+    const settled = await Promise.allSettled(
+      reports.map(
+        async (report) => [report.id, await writer.results.sign(report, null, now)] as const
+      )
+    );
+    setBatching(false);
     setBulkOpen(false);
+    const stamped: Record<string, SignedNote> = Object.fromEntries(
+      settled.flatMap((outcome) => (outcome.status === 'fulfilled' ? [outcome.value] : []))
+    );
+    const recorded = Object.keys(stamped).length;
+    const unsigned = bulkCandidates.length - recorded;
+    setSigned((previous) => ({ ...previous, ...stamped }));
     setToast({
-      title: counted(t, BATCH_SIGNED, bulkCandidates.length),
-      message: t('results.bulk.message'),
+      tone: unsigned === 0 ? 'success' : 'danger',
+      title: counted(t, BATCH_SIGNED, recorded),
+      message: unsigned === 0 ? t('results.bulk.message') : counted(t, BATCH_UNSIGNED, unsigned),
     });
-  }, [t, bulkCandidates, now]);
+  }, [t, bulkCandidates, writer, now]);
+
+  const busy = signOff.pending || batching;
 
   const requestSign = useCallback((report: ResultReport | null, withNote: boolean) => {
     if (!report) return;
@@ -316,6 +384,7 @@ export function ResultsScreen({
   const commands = useResultCommands({
     selected,
     bulkCandidates,
+    notes: writer.results.notes,
     requestSign,
     setAssignment,
     setBulkOpen,
@@ -408,6 +477,9 @@ export function ResultsScreen({
                 now={now}
                 onSign={() => requestSign(reading, false)}
                 onSignWithNote={() => requestSign(reading, true)}
+                notes={writer.results.notes}
+                values={analytes.status}
+                onRetryValues={analytes.refetch}
                 unshownAnalytes={unshownAnalytes}
                 patientNamed={patientNamed}
                 providerNamed={providerNamed}
@@ -436,7 +508,8 @@ export function ResultsScreen({
             </Button>
             <Button
               iconLeft="pen-line"
-              onClick={() => (signing ? signOne(signing.report, null) : undefined)}
+              disabled={busy || !readable}
+              onClick={() => (signing ? void signOne(signing.report, null) : undefined)}
             >
               {t('results.sign.confirm')}
             </Button>
@@ -449,7 +522,8 @@ export function ResultsScreen({
         subject={signing?.report.panel ?? ''}
         patientName={selectedPatientName}
         onCancel={() => setSigning(null)}
-        onConfirm={(note) => (signing ? signOne(signing.report, note || null) : undefined)}
+        onConfirm={(note) => (signing ? void signOne(signing.report, note || null) : undefined)}
+        disabled={busy || !readable}
       />
 
       <Modal
@@ -462,7 +536,7 @@ export function ResultsScreen({
             <Button variant="ghost" onClick={() => setBulkOpen(false)}>
               {t('results.sign.cancel')}
             </Button>
-            <Button iconLeft="check-check" onClick={signBulk}>
+            <Button iconLeft="check-check" disabled={busy} onClick={() => void signBulk()}>
               {counted(t, BATCH_CONFIRM, bulkCandidates.length)}
             </Button>
           </>
@@ -478,7 +552,7 @@ export function ResultsScreen({
       {toast ? (
         <div className="or-toast-dock">
           <Toast
-            tone="success"
+            tone={toast.tone}
             title={toast.title}
             message={toast.message}
             onClose={() => setToast(null)}

@@ -108,6 +108,8 @@ export const results: Messages = {
   'results.reading.noteHeading': 'Note on signing',
   'results.reading.caption': '{panel}, values against their reference ranges',
   'results.reading.noRange': 'No range recorded',
+  'results.reading.valuesLoading': 'Loading the values. Sign-off waits until they are shown.',
+  'results.reading.valuesFailed': 'The values did not load. Sign-off waits until they are shown.',
   'results.reading.noPrior': 'No prior value',
   'results.reading.prior': '{value} on {at}',
 
@@ -123,6 +125,9 @@ export const results: Messages = {
   'results.signed.message': 'The result is released to the patient and has left the queue.',
 
   /* ------------------------------------------------------- signing a batch */
+  'results.signFailed.title': '{panel} not signed',
+  'results.signFailed.message':
+    'The sign-off was not recorded, so the result is still in the queue.',
   'results.bulk.actionOne': 'Sign {count} in-range result',
   'results.bulk.actionOther': 'Sign {count} in-range results',
   'results.bulk.actionNone': 'No in-range results to batch',
@@ -139,6 +144,8 @@ export const results: Messages = {
     'Critical and out-of-range results stay in the queue for a person to read.',
 
   /* ---------------------------------------------------- signing with a note */
+  'results.bulk.unsignedOne': '{count} result was not recorded and is still in the queue.',
+  'results.bulk.unsignedOther': '{count} results were not recorded and are still in the queue.',
   'results.note.title': 'Sign with a note',
   'results.note.description':
     'Signing {panel} for {patient} moves it out of the queue and releases it to the portal with your note attached.',

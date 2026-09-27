@@ -429,3 +429,24 @@ describe('NewOrderScreen, the review step', () => {
     expect(within(table).getByText('Needs a diagnosis')).toBeInTheDocument();
   });
 });
+
+describe('NewOrderScreen, its own clock', () => {
+  /* The patient's age is measured against "now". With none fixed the composer
+     reads the clinic clock, which in the demo build is the fixtures' instant,
+     so it renders exactly what a fixed-instant composer does. */
+  it('measures the patient against the clinic clock when no instant is fixed', async () => {
+    const fixed = render(
+      <NewOrderScreen client={createMockClient({ roles: ['clinician'] })} now={MOCK_NOW} />
+    );
+    await screen.findByLabelText('Ordering for');
+    choosePatient('Patientsson');
+    const expected = document.body.textContent;
+    fixed.unmount();
+
+    render(<NewOrderScreen client={createMockClient({ roles: ['clinician'] })} />);
+    await screen.findByLabelText('Ordering for');
+    choosePatient('Patientsson');
+
+    expect(document.body.textContent).toBe(expected);
+  });
+});

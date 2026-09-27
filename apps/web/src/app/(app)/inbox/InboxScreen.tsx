@@ -18,8 +18,16 @@ import {
 } from '@/components/inbox';
 import { AppShell } from '@/components/shell';
 import { AsyncBoundary, Toast } from '@/components/state';
-import { INBOX_STREAMS, MOCK_NOW, slaState, useInbox, usePatientNames } from '@/lib/api';
+import {
+  INBOX_STREAMS,
+  slaState,
+  useInbox,
+  useMutation,
+  usePatientNames,
+  worklist,
+} from '@/lib/api';
 import type { Assignment, InboxItem, InboxStream, WorklistClient } from '@/lib/api';
+import { clinicNow } from '@/lib/api/chart';
 
 import { counted } from '@/lib/i18n/counted';
 import type { CountedMessage } from '@/lib/i18n/counted';
@@ -65,7 +73,11 @@ interface Completion {
 export interface InboxScreenProps {
   /** Injectable for tests. Defaults to the app's worklist client. */
   client?: WorklistClient;
-  /** Fixed "now", so SLA labels are deterministic. */
+  /**
+   * Fixed "now", so SLA labels are deterministic. Defaults to the clinic's
+   * clock: the fixtures' instant in the demo build, the wall clock against the
+   * API, where a due date is measured against today rather than the demo's day.
+   */
   now?: string;
 }
 
@@ -107,8 +119,16 @@ const OVERDUE_SUMMARY: CountedMessage = {
   otherKey: 'inbox.rail.overdueSummaryOther',
 };
 
-export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProps>): ReactElement {
+export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps>): ReactElement {
   const t = useTranslator();
+  const [now] = useState(() => fixedNow ?? clinicNow());
+  /* Writes go through the client the reads came from; in live mode the
+     module-level one, since a disposition names its actor from the credential
+     and does not wait for `/bff/v0/me`. */
+  const writer = client ?? worklist;
+  const { claim: recordClaim, reopen: recordReopen } = writer.inbox;
+  /* A row whose disposition was refused, so the toast can say it is still open. */
+  const [refusal, setRefusal] = useState<InboxItem | null>(null);
   const [stream, setStream] = useState<InboxStream | null>(null);
   const [assignment, setAssignment] = useState<Assignment | ''>('');
   const [doneIds, setDoneIds] = useState<string[]>([]);
@@ -144,35 +164,73 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
     );
   }, [loaded, doneIds, stream, now]);
 
+  /* A row leaves the list once the client says its disposition was recorded,
+     and not before: a row that vanished over a refusal would read as done. */
+  const completing = useMutation((item: InboxItem) => writer.inbox.complete(item));
   const complete = useCallback(
-    (item: InboxItem) => {
+    async (item: InboxItem) => {
+      const outcome = await completing.run(item);
+      if (!outcome.ok) {
+        setCompletion(null);
+        setRefusal(item);
+        return;
+      }
+      setRefusal(null);
       setDoneIds((previous) => [...previous, item.id]);
       setCompletion({ item, label: t(INBOX_STREAM_DONE_KEYS[item.stream]) });
     },
-    [t]
+    [t, completing]
   );
 
   /* One undo for both dispositions: whichever list the row landed in, this puts
-     it back exactly where it was. Reversible acts get an undo, not a dialog. */
-  const undo = useCallback(() => {
-    if (!completion) return;
-    // Read from state rather than from inside a setter: React may replay an
-    // updater, and an updater that queues two more updates would replay those
-    // too. Nothing here needs the freshest value; the toast holding the undo is
-    // the same render's completion.
-    const { id } = completion.item;
-    setDoneIds((previous) => previous.filter((candidate) => candidate !== id));
-    setClaimedIds((previous) => previous.filter((candidate) => candidate !== id));
-    setCompletion(null);
-  }, [completion]);
+     it back exactly where it was. Reversible acts get an undo, not a dialog -
+     where the client can reverse them. Where it cannot, no undo is offered. */
+  const reopening = useMutation((record: (item: InboxItem) => Promise<void>, item: InboxItem) =>
+    record(item)
+  );
+  const undo = useCallback(
+    async (record: (item: InboxItem) => Promise<void>) => {
+      if (!completion) return;
+      // Read from state rather than from inside a setter: React may replay an
+      // updater, and an updater that queues two more updates would replay those
+      // too. Nothing here needs the freshest value; the toast holding the undo is
+      // the same render's completion.
+      const { item } = completion;
+      const outcome = await reopening.run(record, item);
+      if (!outcome.ok) {
+        setCompletion(null);
+        setRefusal(item);
+        return;
+      }
+      setDoneIds((previous) => previous.filter((candidate) => candidate !== item.id));
+      setClaimedIds((previous) => previous.filter((candidate) => candidate !== item.id));
+      setCompletion(null);
+    },
+    [completion, reopening]
+  );
 
+  /* Handed the client's claim rather than reading it here: the row only offers
+     Assign to me where the client has one, so there is no absent claim to
+     answer for. */
+  const claiming = useMutation((record: (item: InboxItem) => Promise<void>, item: InboxItem) =>
+    record(item)
+  );
   const claim = useCallback(
-    (item: InboxItem) => {
+    async (record: (item: InboxItem) => Promise<void>, item: InboxItem) => {
+      const outcome = await claiming.run(record, item);
+      if (!outcome.ok) {
+        setCompletion(null);
+        setRefusal(item);
+        return;
+      }
+      setRefusal(null);
       setClaimedIds((previous) => [...previous, item.id]);
       setCompletion({ item, label: t('inbox.list.assigned') });
     },
-    [t]
+    [t, claiming]
   );
+
+  const busy = completing.pending || claiming.pending || reopening.pending;
 
   const commands = useMemo<Command[]>(
     () => [
@@ -312,8 +370,10 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
             <InboxList
               items={visible}
               now={now}
-              onComplete={complete}
-              onClaim={claim}
+              completes={writer.inbox.completes}
+              onComplete={(item) => void complete(item)}
+              onClaim={recordClaim === null ? undefined : (item) => void claim(recordClaim, item)}
+              busy={busy}
               claimedIds={claimedIds}
               patientNamed={patientNamed}
             />
@@ -328,11 +388,29 @@ export function InboxScreen({ client, now = MOCK_NOW }: Readonly<InboxScreenProp
             title={completion.label}
             message={completion.item.summary}
             action={
-              <Button variant="ghost" size="sm" onClick={undo}>
-                {t('inbox.list.undo')}
-              </Button>
+              recordReopen === null ? undefined : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void undo(recordReopen)}
+                >
+                  {t('inbox.list.undo')}
+                </Button>
+              )
             }
             onClose={() => setCompletion(null)}
+          />
+        </div>
+      ) : null}
+
+      {refusal ? (
+        <div className="or-toast-dock">
+          <Toast
+            tone="danger"
+            title={t('inbox.list.notRecorded')}
+            message={refusal.summary}
+            onClose={() => setRefusal(null)}
           />
         </div>
       ) : null}

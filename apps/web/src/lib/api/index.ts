@@ -219,6 +219,7 @@ export type {
   ResultListQuery,
   ResultPage,
   ResultReport,
+  ResultSignature,
   ResultStatus,
   SlaState,
   WarningTier,

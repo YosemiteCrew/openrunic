@@ -800,6 +800,21 @@ describe('ResultsScreen, recording a sign-off', () => {
     expect(analytes).toHaveBeenCalledTimes(2);
   });
 
+  /* A second press while the first sign-off is outstanding would send a second
+     review, which the API refuses as already reviewed - and that refusal would
+     then be the last thing the clinician is told. */
+  it('holds the confirmation while a sign-off is outstanding', async () => {
+    const sign = vi.fn(() => new Promise<never>(() => undefined));
+    render(<ResultsScreen client={withResults({ sign })} now={MOCK_NOW} />);
+
+    await signLipidPanel();
+
+    const confirm = within(screen.getByRole('dialog')).getByRole('button', { name: 'Sign result' });
+    await waitFor(() => expect(confirm).toBeDisabled());
+    fireEvent.click(confirm);
+    expect(sign).toHaveBeenCalledTimes(1);
+  });
+
   /* No client given is the app's own: the fixtures here, the API in a live
      build. The sign-off still goes through it rather than around it. */
   it('signs through the app client when given none', async () => {

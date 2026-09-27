@@ -250,6 +250,79 @@ function useResultCommands({
   );
 }
 
+/**
+ * The sign-offs made on this screen, and what the clinician is told about each.
+ *
+ * Nothing is marked signed until the client says it was recorded: a refused
+ * sign-off leaves the report in the queue and the notice says so. Each report
+ * in a batch is its own sign-off, so a batch can half succeed; what was
+ * recorded is marked, what was not is counted, and the requests are settled
+ * rather than awaited as one so a single refusal cannot hide the rest.
+ */
+function useSignOff(writer: WorklistClient, now: string) {
+  const t = useTranslator();
+  const [signed, setSigned] = useState<Record<string, SignedNote>>({});
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [batching, setBatching] = useState(false);
+  const signOff = useMutation((report: ResultReport, note: string | null) =>
+    writer.results.sign(report, note, now)
+  );
+
+  const signOne = useCallback(
+    async (report: ResultReport, note: string | null) => {
+      const outcome = await signOff.run(report, note);
+      if (!outcome.ok) {
+        setNotice({
+          tone: 'danger',
+          title: t('results.signFailed.title', { panel: report.panel }),
+          message: t('results.signFailed.message'),
+        });
+        return;
+      }
+      setSigned((previous) => ({ ...previous, [report.id]: outcome.value }));
+      setNotice({
+        tone: 'success',
+        title: t('results.signed.title', { panel: report.panel }),
+        message: outcome.value.note
+          ? t('results.signed.messageWithNote')
+          : t('results.signed.message'),
+      });
+    },
+    [t, signOff]
+  );
+
+  const signBatch = useCallback(
+    async (reports: readonly ResultReport[]) => {
+      setBatching(true);
+      const settled = await Promise.allSettled(
+        reports.map(
+          async (report) => [report.id, await writer.results.sign(report, null, now)] as const
+        )
+      );
+      setBatching(false);
+      const stamped: Record<string, SignedNote> = Object.fromEntries(
+        settled.flatMap((outcome) => (outcome.status === 'fulfilled' ? [outcome.value] : []))
+      );
+      const recorded = Object.keys(stamped).length;
+      const unsigned = reports.length - recorded;
+      setSigned((previous) => ({ ...previous, ...stamped }));
+      setNotice({
+        tone: unsigned === 0 ? 'success' : 'danger',
+        title: counted(t, BATCH_SIGNED, recorded),
+        message: unsigned === 0 ? t('results.bulk.message') : counted(t, BATCH_UNSIGNED, unsigned),
+      });
+    },
+    [t, writer, now]
+  );
+
+  const dismiss = useCallback(() => setNotice(null), []);
+
+  return useMemo(
+    () => ({ signed, notice, dismiss, signOne, signBatch, busy: signOff.pending || batching }),
+    [signed, notice, dismiss, signOne, signBatch, signOff.pending, batching]
+  );
+}
+
 export function ResultsScreen({
   client,
   now: fixedNow,
@@ -265,10 +338,10 @@ export function ResultsScreen({
      the `RESULT` task that carries the assignment (#535). */
   const [assignment, setAssignment] = useState<Assignment | ''>('ME');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [signed, setSigned] = useState<Record<string, SignedNote>>({});
   const [signing, setSigning] = useState<Signing | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [toast, setToast] = useState<Notice | null>(null);
+  const signOffs = useSignOff(writer, now);
+  const { signed, busy } = signOffs;
 
   const results = useResults(
     { pageSize: PAGE_SIZE, ...(assignment ? { assignedTo: assignment } : {}) },
@@ -317,63 +390,17 @@ export function ResultsScreen({
     ? Math.max(analytes.data.page.total - analytes.data.data.length, 0)
     : 0;
 
-  /* Nothing is marked signed until the client says it was recorded. The row
-     stays in the queue on a refusal, and the toast says so. */
-  const signOff = useMutation((report: ResultReport, note: string | null) =>
-    writer.results.sign(report, note, now)
-  );
   const signOne = useCallback(
     async (report: ResultReport, note: string | null) => {
-      const outcome = await signOff.run(report, note);
+      await signOffs.signOne(report, note);
       setSigning(null);
-      if (!outcome.ok) {
-        setToast({
-          tone: 'danger',
-          title: t('results.signFailed.title', { panel: report.panel }),
-          message: t('results.signFailed.message'),
-        });
-        return;
-      }
-      setSigned((previous) => ({ ...previous, [report.id]: outcome.value }));
-      setToast({
-        tone: 'success',
-        title: t('results.signed.title', { panel: report.panel }),
-        message: outcome.value.note
-          ? t('results.signed.messageWithNote')
-          : t('results.signed.message'),
-      });
     },
-    [t, signOff]
+    [signOffs]
   );
-
-  /* Each report is its own sign-off, so a batch can half succeed. What was
-     recorded is marked; what was not stays in the queue and is counted. Settled
-     rather than awaited as one, so a single refusal cannot hide the rest. */
-  const [batching, setBatching] = useState(false);
   const signBulk = useCallback(async () => {
-    const reports = bulkCandidates;
-    setBatching(true);
-    const settled = await Promise.allSettled(
-      reports.map(
-        async (report) => [report.id, await writer.results.sign(report, null, now)] as const
-      )
-    );
-    setBatching(false);
+    await signOffs.signBatch(bulkCandidates);
     setBulkOpen(false);
-    const stamped: Record<string, SignedNote> = Object.fromEntries(
-      settled.flatMap((outcome) => (outcome.status === 'fulfilled' ? [outcome.value] : []))
-    );
-    const recorded = Object.keys(stamped).length;
-    const unsigned = bulkCandidates.length - recorded;
-    setSigned((previous) => ({ ...previous, ...stamped }));
-    setToast({
-      tone: unsigned === 0 ? 'success' : 'danger',
-      title: counted(t, BATCH_SIGNED, recorded),
-      message: unsigned === 0 ? t('results.bulk.message') : counted(t, BATCH_UNSIGNED, unsigned),
-    });
-  }, [t, bulkCandidates, writer, now]);
-
-  const busy = signOff.pending || batching;
+  }, [signOffs, bulkCandidates]);
 
   const requestSign = useCallback((report: ResultReport | null, withNote: boolean) => {
     if (!report) return;
@@ -549,13 +576,13 @@ export function ResultsScreen({
         </ul>
       </Modal>
 
-      {toast ? (
+      {signOffs.notice ? (
         <div className="or-toast-dock">
           <Toast
-            tone={toast.tone}
-            title={toast.title}
-            message={toast.message}
-            onClose={() => setToast(null)}
+            tone={signOffs.notice.tone}
+            title={signOffs.notice.title}
+            message={signOffs.notice.message}
+            onClose={signOffs.dismiss}
           />
         </div>
       ) : null}

@@ -172,8 +172,8 @@ export function createMemoryCollection<
   const inScope = (row: ScopedRow<M>, narrowFacility: boolean): boolean => {
     if (row.tenantId !== tenantId) return false;
     if (!ownChart && narrowFacility && !inFacility(row)) return false;
-    if (compartment === undefined || spec.compartment === 'open') return true;
-    if (spec.compartment === 'closed') return false;
+    if (compartment === undefined || spec.compartment === 'open' || spec.compartment === 'closed')
+      return true;
     return readColumn(row, spec.compartment.column) === compartment;
   };
 

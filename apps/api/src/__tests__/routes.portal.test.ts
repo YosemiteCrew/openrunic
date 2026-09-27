@@ -13,6 +13,7 @@ import {
   jsonBearer,
   makeAppointmentRow,
   makePatientRow,
+  makeTelehealthVisitRow,
   seed,
   storageColumns,
   testId,
@@ -423,6 +424,90 @@ describe('GET /bff/v0/portal/appointments', () => {
       expect.objectContaining({ id: testId(12_000), location: null }),
       expect.objectContaining({ id: testId(12_001) }),
     ]);
+  });
+
+  it('includes telehealth join URL and video mode when an OPEN visit exists', async () => {
+    const { app, dataset } = createTestApp();
+    enablePortal(dataset);
+    seed(dataset, 'Facility', makeFacilityRow());
+    const appointmentId = testId(13_000);
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({
+        id: appointmentId,
+        patientId: DEMO_PORTAL_PATIENT,
+        facilityId: FACILITY,
+        start: new Date(FIXED_NOW.getTime() + 60_000),
+      })
+    );
+    seed(
+      dataset,
+      'TelehealthVisit',
+      makeTelehealthVisitRow({
+        id: testId(13_001),
+        appointmentId,
+        status: 'OPEN',
+        joinUrl: 'https://video.daily.co/room-abc',
+      })
+    );
+
+    const response = await app.request('/bff/v0/portal/appointments', {
+      headers: bearer(TOKENS.portalA),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      upcoming: Array<Record<string, unknown>>;
+      past: Array<Record<string, unknown>>;
+    };
+    expect(body.upcoming).toHaveLength(1);
+    expect(body.upcoming[0]).toMatchObject({
+      id: appointmentId,
+      mode: 'video',
+      joinUrl: 'https://video.daily.co/room-abc',
+    });
+  });
+
+  it('does not include join URL when the telehealth visit has ended', async () => {
+    const { app, dataset } = createTestApp();
+    enablePortal(dataset);
+    seed(dataset, 'Facility', makeFacilityRow());
+    const appointmentId = testId(13_100);
+    seed(
+      dataset,
+      'Appointment',
+      makeAppointmentRow({
+        id: appointmentId,
+        patientId: DEMO_PORTAL_PATIENT,
+        facilityId: FACILITY,
+        start: new Date(FIXED_NOW.getTime() - 60_000),
+      })
+    );
+    seed(
+      dataset,
+      'TelehealthVisit',
+      makeTelehealthVisitRow({
+        id: testId(13_101),
+        appointmentId,
+        status: 'ENDED',
+        joinUrl: 'https://video.daily.co/room-ended',
+      })
+    );
+
+    const response = await app.request('/bff/v0/portal/appointments', {
+      headers: bearer(TOKENS.portalA),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      upcoming: Array<Record<string, unknown>>;
+      past: Array<Record<string, unknown>>;
+    };
+    expect(body.past).toHaveLength(1);
+    expect(body.past[0]).toMatchObject({
+      id: appointmentId,
+      mode: null,
+      joinUrl: null,
+    });
   });
 });
 

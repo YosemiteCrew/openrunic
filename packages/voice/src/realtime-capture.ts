@@ -68,8 +68,11 @@ export interface RealtimeConnection {
   close: () => void;
   /**
    * The reader pressed stop: no more audio may leave, while the connection
-   * stays open for the words already sent. Optional, because a transport whose
-   * media ends with the commit has nothing more to do.
+   * stays open for the words already sent. A transport that mutes also bounds
+   * that wait: if the service has not finished within its settle time, it
+   * closes and reports `closed`, because stop may be waiting on speech the
+   * service has not reported yet. Optional, because a transport whose media
+   * ends with the commit has nothing more to do.
    */
   mute?: () => void;
 }
@@ -151,8 +154,11 @@ export function createRealtimeCapture(
   let live: string | null = null;
   let open: RealtimeConnection | null = null;
   let stopping = false;
-  /* Stop sent a commit and the service has not yet said which item it made. */
+  /* A commit was sent and the service has not yet said which item it made. */
   let awaitingCommit = false;
+  /* A commit was sent this session. There is only ever one: it takes
+     everything in the buffer, so a second would find it empty. */
+  let commitSent = false;
   /* Per vendor item: the words so far, whether the service has committed it,
      and whether it has already settled. `pending` is every item the service has
      told us about that has not settled - the words stop must wait for. A
@@ -173,6 +179,7 @@ export function createRealtimeCapture(
     open = null;
     stopping = false;
     awaitingCommit = false;
+    commitSent = false;
     partial = new Map();
     pending = new Set();
     committed = new Set();
@@ -199,6 +206,21 @@ export function createRealtimeCapture(
     if (!settled.has(itemId)) pending.add(itemId);
   };
 
+  const commit = (connection: RealtimeConnection) => {
+    awaitingCommit = true;
+    commitSent = true;
+    connection.send({ type: 'input_audio_buffer.commit' });
+  };
+
+  /* Speech the service heard before stop and reported after it gets the
+     commit stop would have sent, had the report arrived first. Not when a
+     commit has already gone, which took everything in the buffer, and not for
+     an item the service has settled or committed. */
+  const commitLate = (itemId: string) => {
+    if (open === null || commitSent || !pending.has(itemId) || committed.has(itemId)) return;
+    commit(open);
+  };
+
   const onMessage = (id: string, message: unknown) => {
     if (live !== id) return;
     const wire = read(message);
@@ -223,7 +245,9 @@ export function createRealtimeCapture(
         return;
       }
       case SPEECH_STARTED:
-        if (wire.itemId !== null) track(wire.itemId);
+        if (wire.itemId === null) return;
+        track(wire.itemId);
+        if (stopping) commitLate(wire.itemId);
         return;
       case COMMITTED:
         if (wire.itemId === null) return;
@@ -302,20 +326,24 @@ export function createRealtimeCapture(
          server turn detection it is only while speech it has seen start is
          still uncommitted: once everything is committed, the buffer is empty,
          and a commit on an empty buffer is an error that would end a
-         dictation that worked as a failure. */
+         dictation that worked as a failure.
+
+         Nothing pending at the press is not proof that nothing was said: the
+         service can have heard speech start and not yet said so. A connection
+         that mutes stays open for it, until the words settle or the
+         transport's settle time closes it. One that cannot mute is still
+         sending audio, so the question ends here. */
       if (open === null || stopping) return;
       stopping = true;
+      const connection = open;
       /* Stop means the microphone is off now, not once the service has caught
          up: anything said after the press is not part of the question. */
-      open.mute?.();
+      connection.mute?.();
       const uncommitted =
         transport.turnDetection === 'manual' ||
         [...pending].some((itemId) => !committed.has(itemId));
-      if (uncommitted) {
-        awaitingCommit = true;
-        open.send({ type: 'input_audio_buffer.commit' });
-      }
-      if (live !== null) settleIfDone(live);
+      if (uncommitted) commit(connection);
+      if (connection.mute === undefined && live !== null) settleIfDone(live);
     },
 
     abort: () => {

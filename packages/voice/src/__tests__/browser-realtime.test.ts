@@ -531,6 +531,10 @@ describe('every way out turns the microphone off', () => {
 });
 
 describe('under the capture adapter', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('turns the service transcript into the words the reader said', async () => {
     const media = rig();
     const port = createRealtimeCapture(transport(media.media), {
@@ -558,6 +562,66 @@ describe('under the capture adapter', () => {
       { type: 'listening', id: 's1' },
       { type: 'heard', id: 's1', text: 'is the dose due', final: true },
     ]);
+  });
+
+  async function stopped() {
+    const granted = stream();
+    const media = rig({ microphone: () => Promise.resolve(granted) });
+    const port = createRealtimeCapture(transport(media.media, undefined, { settleMs: 500 }), {
+      endpoint: ENDPOINT,
+      agreement: 'a synthetic agreement',
+    });
+    if (port === null) throw new Error('expected a port');
+    const seen: CaptureEvent[] = [];
+    port.onEvent((event) => seen.push(event));
+    port.start({ id: 's1', language: 'en-US' });
+    await tick();
+    const channel = media.peers[0]?.channels[0];
+    if (channel === undefined) throw new Error('expected a channel');
+    channel.opens();
+    vi.useFakeTimers();
+    port.stop();
+    return { granted, media, channel, seen };
+  }
+
+  it('after a stop with nothing reported, keeps listening for late words until the settle time', async () => {
+    const { granted, media, channel, seen } = await stopped();
+
+    expect(granted.tracks[0]?.stopped).toBe(true);
+    expect(channel.sent).toEqual([]);
+    vi.advanceTimersByTime(499);
+    expect(seen).toEqual([{ type: 'listening', id: 's1' }]);
+    expect(media.peers[0]?.closed).toBe(0);
+
+    vi.advanceTimersByTime(1);
+    expect(seen).toEqual([
+      { type: 'listening', id: 's1' },
+      { type: 'ended', id: 's1' },
+    ]);
+    expect(media.peers[0]?.closed).toBe(1);
+  });
+
+  it('transcribes speech the service reports after stop, and ends without the deadline', async () => {
+    const { media, channel, seen } = await stopped();
+    const say = (message: object) => channel.onmessage?.({ data: JSON.stringify(message) });
+
+    say({ type: 'input_audio_buffer.speech_started', item_id: 'i1' });
+    expect(channel.sent).toEqual([JSON.stringify({ type: 'input_audio_buffer.commit' })]);
+    say({ type: 'input_audio_buffer.committed', item_id: 'i1' });
+    say({
+      type: 'conversation.item.input_audio_transcription.completed',
+      item_id: 'i1',
+      transcript: 'is the dose due',
+    });
+
+    expect(seen).toEqual([
+      { type: 'listening', id: 's1' },
+      { type: 'heard', id: 's1', text: 'is the dose due', final: true },
+      { type: 'ended', id: 's1' },
+    ]);
+    expect(media.peers[0]?.closed).toBe(1);
+    vi.advanceTimersByTime(1_000);
+    expect(seen).toHaveLength(3);
   });
 });
 

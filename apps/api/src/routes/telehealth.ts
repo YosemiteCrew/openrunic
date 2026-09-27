@@ -100,12 +100,12 @@ function videoAdapter(registry: AdapterRegistry) {
 /**
  * Telehealth room management is staff work, and this refuses everyone else.
  *
- * Every route here reads or writes the shared `TelehealthVisit` table, which
- * carries no patient column and so cannot be narrowed to one chart at the data
- * layer. A patient-portal token holds `appointment.read` and `appointment.write`
- * and would otherwise reach all of it: list every patient's OPEN visit and lift
- * the join URL, or drive the open-room route into a second vendor room the
- * preflight cannot see. A patient joins their own visit by the passwordless link
+ * The repository does narrow a patient-scoped token to the visits on its own
+ * appointments, through the appointment's patient. That covers reading, not
+ * managing: a patient-portal token holds `appointment.read` and
+ * `appointment.write`, and without this check could still drive the open-room
+ * route into a second vendor room the preflight cannot see, or end their own
+ * visit for everyone in it. A patient joins their own visit by the passwordless link
  * they are sent; they never open, end, or list a room. Every handler here calls this
  * first, before it reads the appointment or the visit table.
  */

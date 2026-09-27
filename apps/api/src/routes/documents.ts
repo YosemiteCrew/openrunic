@@ -603,7 +603,7 @@ async function identityPreview(
   }
 
   const repos = repositories(c);
-  if ((await repos.facilities.findById(mrnAuthority)) === null) {
+  if (mrnAuthority !== repos.tenantId && (await repos.facilities.findById(mrnAuthority)) === null) {
     return { status: 'insufficient', comparedBy: 'none', differences: [] };
   }
 

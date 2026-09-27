@@ -384,6 +384,22 @@ describe('a document arriving from somebody else', () => {
     });
   });
 
+  it('accepts the organisation itself as the MRN authority of an unassigned export', async () => {
+    const { app } = harness();
+    const ours = (await ccdFor(app)).document;
+    const tenantAuthority = ours.replace(
+      /(<patientRole>\s*<id[^>]*\/>\s*<id root=")[^"]+(")/,
+      `$1${DEMO_TENANT_A}$2`
+    );
+    expect(tenantAuthority).not.toBe(ours);
+
+    const summary = (await (await importDocument(app, tenantAuthority)).json()) as {
+      identity: Record<string, unknown>;
+    };
+
+    expect(summary.identity).toEqual({ status: 'match', comparedBy: 'mrn', differences: [] });
+  });
+
   it('does not claim an identity match from a reduced-precision birth date', async () => {
     const { app } = harness();
     const ours = (await ccdFor(app)).document;

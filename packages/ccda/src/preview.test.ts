@@ -159,6 +159,57 @@ describe('a C-CDA migration preview', () => {
     expect(preview.totals).toMatchObject({ sourceEntries: 1, mappedEntries: 1 });
   });
 
+  it('settles template matches before a code match claims the section for an earlier type', () => {
+    const source = `<ClinicalDocument xmlns="urn:hl7-org:v3"><id root="doc-1"/>
+      <component><structuredBody><component><section>
+        <templateId root="2.16.840.1.113883.10.20.22.2.5.1"/>
+        <code code="48765-2"/>
+        <entry><act classCode="ACT" moodCode="EVN"><id root="problem-1"/></act></entry>
+      </section></component></structuredBody></component>
+    </ClinicalDocument>`;
+    const preview = previewCcd(source);
+
+    expect(preview.document.problems).toHaveLength(1);
+    expect(preview.document.allergies).toEqual([]);
+    expect(preview.sections.find((section) => section.name === 'problems')).toMatchObject({
+      status: 'mapped',
+      mappedEntries: 1,
+    });
+    expect(preview.sections.find((section) => section.name === 'allergies')).toMatchObject({
+      status: 'absent',
+    });
+  });
+
+  it('accounts for sections nested inside another section', () => {
+    const source = `<ClinicalDocument xmlns="urn:hl7-org:v3"><id root="doc-1"/>
+      <component><structuredBody><component><section>
+        <code code="99999-9"/><title>Summary</title>
+        <component><section>
+          <code code="11450-4"/>
+          <entry><act classCode="ACT" moodCode="EVN"><id root="problem-1"/></act></entry>
+        </section></component>
+        <component><section><code code="88888-8"/><entry><act/></entry></section></component>
+      </section></component></structuredBody></component>
+    </ClinicalDocument>`;
+    const preview = previewCcd(source);
+
+    expect(preview.document.problems).toHaveLength(1);
+    expect(preview.totals).toMatchObject({
+      sourceSections: 3,
+      unsupportedSections: 2,
+      sourceEntries: 2,
+      mappedEntries: 1,
+      rejectedEntries: 1,
+    });
+    expect(preview.sections.find((section) => section.name === 'problems')).toMatchObject({
+      status: 'mapped',
+      mappedEntries: 1,
+    });
+    expect(preview.sections.map((section) => section.name)).toEqual(
+      expect.arrayContaining(['99999-9', '88888-8'])
+    );
+  });
+
   it('identifies coded fields that are absent even when their fallback display is readable', () => {
     const source = `<ClinicalDocument xmlns="urn:hl7-org:v3"><id root="doc-1"/>
       <component><structuredBody>

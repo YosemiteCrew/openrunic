@@ -14,7 +14,7 @@ import { problemsSection } from './sections/problems.js';
 import { resultsSection, vitalsSection } from './sections/results.js';
 import { CcdaError } from './xml/errors.js';
 import { parseXml } from './xml/reader.js';
-import { attr, childNamed, childrenNamed, element, isElement, path, textOf } from './xml/tree.js';
+import { attr, childNamed, childrenNamed, element, path, textOf } from './xml/tree.js';
 import type { XmlElement } from './xml/tree.js';
 import { renderDocument } from './xml/writer.js';
 
@@ -80,13 +80,10 @@ function readCcd(root: XmlElement): CcdDocument {
     throw new CcdaError(`Expected a ClinicalDocument, found <${root.name}>`);
   }
 
-  const sourceSections = sectionsOf(root);
-  const selected = new Set<XmlElement>();
+  const selected = selectSections(sectionsOf(root));
   const read = <T>(spec: SectionSpec<T>): T[] => {
-    const section = preferredSection(sourceSections, descriptorFor(spec), selected);
-    if (section === undefined) return [];
-    selected.add(section);
-    return spec.read(section);
+    const section = selected.get(descriptorFor(spec).name);
+    return section === undefined ? [] : spec.read(section);
   };
 
   return {
@@ -235,13 +232,14 @@ export function previewCcd(xml: string): CcdPreview {
   const root = parseXml(xml);
   const document = readCcd(root);
   const sourceSections = sectionsOf(root);
-  const selected = new Set<XmlElement>();
+  const selectedByName = selectSections(sourceSections);
+  const selected = new Set<XmlElement>(selectedByName.values());
   const sections: CcdSectionPreview[] = [];
   const rejections: CcdPreviewRejection[] = [];
   const unidentified: CcdPreviewUnidentified[] = [];
 
   for (const sectionDescriptor of SECTION_DESCRIPTORS) {
-    const section = preferredSection(sourceSections, sectionDescriptor, selected);
+    const section = selectedByName.get(sectionDescriptor.name);
     if (section === undefined) {
       sections.push({
         name: sectionDescriptor.name,
@@ -255,7 +253,6 @@ export function previewCcd(xml: string): CcdPreview {
       continue;
     }
 
-    selected.add(section);
     sections.push(inspectSection(section, sectionDescriptor, rejections, unidentified));
   }
 
@@ -310,31 +307,54 @@ export function previewCcd(xml: string): CcdPreview {
   };
 }
 
+/** Every section in document order, including subsections nested inside another section. */
 function sectionsOf(root: XmlElement): XmlElement[] {
-  const body = path(root, 'component', 'structuredBody');
-  return childrenNamed(body, 'component')
+  const found: XmlElement[] = [];
+  const pending = [...componentSections(path(root, 'component', 'structuredBody'))].reverse();
+  for (let section = pending.pop(); section !== undefined; section = pending.pop()) {
+    found.push(section);
+    pending.push(...componentSections(section).reverse());
+  }
+  return found;
+}
+
+function componentSections(parent: XmlElement | undefined): XmlElement[] {
+  return childrenNamed(parent, 'component')
     .map((component) => childNamed(component, 'section'))
     .filter((section): section is XmlElement => section !== undefined);
 }
 
-function preferredSection(
-  sections: readonly XmlElement[],
-  sectionDescriptor: SectionDescriptor,
-  selected: ReadonlySet<XmlElement>
-): XmlElement | undefined {
-  return (
-    sections.find(
-      (section) =>
-        !selected.has(section) &&
-        childrenNamed(section, 'templateId').some(
-          (template) => attr(template, 'root') === sectionDescriptor.templateRoot
-        )
-    ) ??
-    sections.find(
-      (section) =>
-        !selected.has(section) &&
-        attr(childNamed(section, 'code'), 'code') === sectionDescriptor.code
-    )
+/**
+ * Assigns each supported type at most one source section, and each source section
+ * at most one type. Every template match is settled before any LOINC-code fallback,
+ * so a section whose template names one type and whose code names another goes to
+ * its template's type whatever order the types are visited in.
+ */
+function selectSections(sections: readonly XmlElement[]): Map<CcdSectionName, XmlElement> {
+  const selected = new Map<CcdSectionName, XmlElement>();
+  const taken = new Set<XmlElement>();
+  const claim = (matches: (section: XmlElement, candidate: SectionDescriptor) => boolean) => {
+    for (const sectionDescriptor of SECTION_DESCRIPTORS) {
+      if (selected.has(sectionDescriptor.name)) continue;
+      const section = sections.find(
+        (candidate) => !taken.has(candidate) && matches(candidate, sectionDescriptor)
+      );
+      if (section === undefined) continue;
+      selected.set(sectionDescriptor.name, section);
+      taken.add(section);
+    }
+  };
+  claim(hasTemplate);
+  claim(
+    (section, sectionDescriptor) =>
+      attr(childNamed(section, 'code'), 'code') === sectionDescriptor.code
+  );
+  return selected;
+}
+
+function hasTemplate(section: XmlElement, sectionDescriptor: SectionDescriptor): boolean {
+  return childrenNamed(section, 'templateId').some(
+    (template) => attr(template, 'root') === sectionDescriptor.templateRoot
   );
 }
 
@@ -352,9 +372,8 @@ function compositeIdentifier(node: XmlElement | undefined): string {
 
 function sectionMatches(section: XmlElement, sectionDescriptor: SectionDescriptor): boolean {
   return (
-    childrenNamed(section, 'templateId').some(
-      (template) => attr(template, 'root') === sectionDescriptor.templateRoot
-    ) || attr(childNamed(section, 'code'), 'code') === sectionDescriptor.code
+    hasTemplate(section, sectionDescriptor) ||
+    attr(childNamed(section, 'code'), 'code') === sectionDescriptor.code
   );
 }
 
@@ -365,17 +384,13 @@ function inspectSection(
   unidentified: CcdPreviewUnidentified[]
 ): CcdSectionPreview {
   const entries = childrenNamed(section, 'entry');
-  const nonEntries = section.children.filter(
-    (child) => !isElement(child) || (child.name !== 'entry' && child.name !== 'text')
-  );
   let mappedEntries = 0;
   let rejectedEntries = 0;
 
   for (const entry of entries) {
-    const isolated = {
-      ...section,
-      children: [...nonEntries, entry],
-    };
+    // The section readers consult only entries, and the narrative is left out on
+    // purpose: resolving narrative references per entry would rescan it each time.
+    const isolated = { ...section, children: [entry] };
     const inspected = sectionDescriptor.inspect(isolated);
     if (inspected.length === 0) {
       rejectedEntries += 1;

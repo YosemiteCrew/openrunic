@@ -55,6 +55,10 @@ export const patients: Messages = {
   'patients.roster.subject': 'the patient list',
   'patients.roster.countOne': '{count} patient in this view',
   'patients.roster.countOther': '{count} patients in this view',
+  'patients.roster.windowOne':
+    '{count} of {total} patients in this view. The rest are on pages this screen cannot reach.',
+  'patients.roster.windowOther':
+    '{count} of {total} patients in this view. The rest are on pages this screen cannot reach.',
   'patients.roster.emptySearchTitle': 'No patient matches that search',
   'patients.roster.emptySearchMessage':
     'Check the spelling, or search by MRN. If this person is new to the practice, register them.',

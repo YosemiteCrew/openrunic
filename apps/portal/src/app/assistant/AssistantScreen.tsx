@@ -40,6 +40,8 @@ import { AssistantComposer } from '@/components/assistant/AssistantComposer';
 import { useAssistant } from '@/components/assistant/AssistantProvider';
 import { AssistantReadback } from '@/components/assistant/AssistantReadback';
 import { AssistantTurnView } from '@/components/assistant/AssistantTurn';
+import { helpQuestionKey, helpTopicGranted } from '@/components/assistant/help';
+import type { HelpTopic } from '@/components/assistant/help';
 import { speakableAnswer } from '@/components/assistant/readback';
 import { announcementFor } from '@/components/assistant/transcript';
 import { useConversation } from '@/components/assistant/useConversation';
@@ -48,8 +50,9 @@ import type { PortalApi } from '@/lib/api/types';
 import type { AssistantCapabilities } from '@/lib/assistant';
 import { useTranslator } from '@/lib/i18n/messages';
 import { useAsync } from '@/lib/useAsync';
-import { createPlatformCapture, createPlatformReadback } from '@/lib/voice';
-import type { CapturePort, ReadbackPort } from '@/lib/voice';
+import { defaultMintRealtime } from '@/lib/assistant';
+import { chooseCapture, createPlatformReadback } from '@/lib/voice';
+import type { BrowserMedia, CapturePort, ReadbackPort, RealtimeMint } from '@/lib/voice';
 
 export interface AssistantScreenProps {
   api?: PortalApi;
@@ -60,17 +63,33 @@ export interface AssistantScreenProps {
    */
   readback?: ReadbackPort | null;
   /**
-   * The microphone a question may be dictated into. Absent means none, which is
-   * what the server render and every browser without an on-device recogniser
-   * both produce. Injected in tests, where jsdom has none to drive.
+   * The microphone a question may be dictated into. Absent means the hosted
+   * service the API named, when it named one and this browser can reach it, and
+   * otherwise the device's own recogniser or none. Injected in tests, where
+   * jsdom has none to drive.
    */
   capture?: CapturePort | null;
+  /**
+   * Asks the API for a hosted dictation credential. Only used when the API
+   * named a transcription service; injected in tests.
+   */
+  mintRealtime?: RealtimeMint;
+  /** The browser's microphone, peer connection and fetch. Injected in tests. */
+  realtimeMedia?: BrowserMedia | null;
+  /**
+   * The screen the reader came from asked about this. Its suggested question is
+   * written into the box, unsent, when the practice granted what answers it.
+   */
+  about?: HelpTopic | null;
 }
 
 export function AssistantScreen({
   api = getPortalApi(),
   readback,
   capture,
+  mintRealtime = defaultMintRealtime,
+  realtimeMedia,
+  about = null,
 }: Readonly<AssistantScreenProps>) {
   const { availability, settled } = useAssistant();
 
@@ -86,26 +105,35 @@ export function AssistantScreen({
 
   return (
     <ConfiguredAssistant
+      about={about}
       api={api}
       capabilities={availability.capabilities}
       capture={capture}
+      mintRealtime={mintRealtime}
       readback={readback}
+      realtimeMedia={realtimeMedia}
     />
   );
 }
 
 interface ConfiguredAssistantProps {
+  about: HelpTopic | null;
   api: PortalApi;
   capabilities: AssistantCapabilities;
   readback?: ReadbackPort | null;
   capture?: CapturePort | null;
+  mintRealtime: RealtimeMint;
+  realtimeMedia?: BrowserMedia | null;
 }
 
 function ConfiguredAssistant({
+  about,
   api,
   capabilities,
   readback,
   capture,
+  mintRealtime,
+  realtimeMedia,
 }: Readonly<ConfiguredAssistantProps>) {
   const t = useTranslator();
   const load = useCallback(() => api.getPatient(), [api]);
@@ -135,9 +163,12 @@ function ConfiguredAssistant({
       >
         {(patient) => (
           <Conversation
+            about={about}
             capabilities={capabilities}
             capture={capture}
             chartPatientId={patient.id}
+            mintRealtime={mintRealtime}
+            realtimeMedia={realtimeMedia}
             readback={readback}
           />
         )}
@@ -147,21 +178,29 @@ function ConfiguredAssistant({
 }
 
 interface ConversationProps {
+  about: HelpTopic | null;
   capabilities: AssistantCapabilities;
   chartPatientId: string;
   readback?: ReadbackPort | null;
   capture?: CapturePort | null;
+  mintRealtime: RealtimeMint;
+  realtimeMedia?: BrowserMedia | null;
 }
 
 function Conversation({
+  about,
   capabilities,
   chartPatientId,
   readback,
   capture,
+  mintRealtime,
+  realtimeMedia,
 }: Readonly<ConversationProps>) {
   const t = useTranslator();
   const { runTurn } = useAssistant();
   const { state, ask, stop } = useConversation(runTurn, chartPatientId);
+  const suggested =
+    about !== null && helpTopicGranted(capabilities, about) ? t(helpQuestionKey(about)) : '';
 
   /* Built once. A new port every render would resubscribe to the device's voice
      list on every keystroke, and the effect that speaks would take a new
@@ -182,9 +221,13 @@ function Conversation({
      down an open microphone to do it. `undefined` means nobody injected one,
      which is the device's own recogniser or nothing; `null` means a caller said
      there is none, and is not the same answer. */
+  const dictation = capabilities.dictation;
   const microphone = useMemo(
-    () => (capture === undefined ? createPlatformCapture() : capture),
-    [capture]
+    () =>
+      capture === undefined
+        ? chooseCapture(dictation, mintRealtime, realtimeMedia)
+        : { port: capture, egress: null },
+    [capture, dictation, mintRealtime, realtimeMedia]
   );
 
   return (
@@ -236,8 +279,10 @@ function Conversation({
 
       <AssistantComposer
         answering={state.answering}
-        capture={microphone}
+        capture={microphone.port}
         chartPatientId={chartPatientId}
+        dictationEgress={microphone.egress}
+        initialQuestion={suggested}
         onAsk={ask}
         onStop={stop}
       />

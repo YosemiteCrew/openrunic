@@ -17,6 +17,7 @@ import { useCallback, useState } from 'react';
 import { Badge, Button, Card, EmptyState, Modal, Table } from '@openrunic/ui';
 import type { BadgeTone, TableColumn } from '@openrunic/ui';
 import { AsyncBoundary } from '@/components/AsyncBoundary';
+import { AssistantHelp } from '@/components/assistant/AssistantHelp';
 import { Money } from '@/components/Money';
 import { PageHeader } from '@/components/PageHeader';
 import { getPortalApi } from '@/lib/api';
@@ -204,6 +205,8 @@ export function BillsScreen({ api = getPortalApi() }: Readonly<BillsScreenProps>
         title={t('portal.bills.title')}
         lede={t('portal.bills.lede')}
       />
+
+      <AssistantHelp topic="bills" />
 
       <AsyncBoundary
         state={state}

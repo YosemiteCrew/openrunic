@@ -21,7 +21,11 @@ vi.mock('next/navigation', () => ({
 
 function failing(): WorklistClient {
   const fail = () => Promise.reject(new ApiError('offline', { kind: 'network' }));
-  return { orders: { list: fail }, results: { list: fail }, inbox: { list: fail } };
+  return {
+    orders: { list: fail },
+    results: { list: fail, analytes: fail },
+    inbox: { list: fail },
+  };
 }
 
 function queue(): HTMLElement {
@@ -42,7 +46,10 @@ describe('ResultsScreen', () => {
     const rows = within(
       await screen.findByRole('list', { name: 'Results to review' })
     ).getAllByRole('listitem');
-    expect(at(rows)).toHaveTextContent('Testperson, Exampla');
+    // Awaited rather than read: the patient column is a SECOND read now, over
+    // the ids the queue came back with, so the row exists a tick before the
+    // name in it does. See `lib/api/names.ts`.
+    await within(at(rows)).findByText('Testperson, Exampla');
     expect(at(rows)).toHaveTextContent('Critical value');
     expect(at(rows)).toHaveTextContent(/Potassium 6.2 mmol\/L, above range/);
   });
@@ -58,6 +65,11 @@ describe('ResultsScreen', () => {
     expect(within(table).getAllByText('In range').length).toBeGreaterThan(0);
     // Cumulative context: one value is a number, three are a direction.
     expect(within(table).getByText(/5.4 on 14 Jun/)).toBeInTheDocument();
+    /* The ordering clinician, from the staff directory. Awaited because it is
+       a second read, and asserted as a NAME rather than as the absence the
+       pane renders for a report with no service request behind it - the two
+       were the same word in a live build before #559. */
+    await screen.findByText(/Ordered by Ada Okafor, MD\./);
   });
 
   it('moves through the queue with the arrow keys', async () => {
@@ -405,5 +417,213 @@ describe('ResultsScreen, the everyone queue', () => {
       await screen.findByRole('list', { name: 'Results to review' })
     ).getAllByRole('listitem');
     expect(rows).toHaveLength(MOCK_RESULTS.length);
+  });
+});
+
+/**
+ * A queue page whose total is larger than the rows on it, the way a live page
+ * carrying a referral report is.
+ *
+ * The total and the row count are deliberately different numbers. A screen that
+ * printed `data.length` where it should print `page.total` agrees with itself
+ * on the fixture client, which reports no refusal at all, and is wrong only on
+ * exactly this page.
+ */
+function withRefused(refused: number): WorklistClient {
+  const base = createWorklistClient();
+  return {
+    ...base,
+    results: {
+      ...base.results,
+      list: async (query) => {
+        const page = await base.results.list(query);
+        return { ...page, page: { ...page.page, total: page.page.total + refused }, refused };
+      },
+    },
+  };
+}
+
+/**
+ * A page the route truncated: the queue matched `beyond` more reports than it
+ * put on the page, and this screen has no pager to reach them.
+ *
+ * `refused` stays zero, so the two causes stay separable. A row absent because
+ * the queue has no word for it and a row absent because it is on page two are
+ * different facts with different remedies.
+ */
+function truncated(beyond: number): WorklistClient {
+  const base = createWorklistClient();
+  return {
+    ...base,
+    results: {
+      ...base.results,
+      list: async (query) => {
+        const page = await base.results.list(query);
+        return { ...page, page: { ...page.page, total: page.page.total + beyond } };
+      },
+    },
+  };
+}
+
+/* The screen opens on MY queue wherever assignment is known, so the count line
+   is about that queue and not about the fixture file. Reading the whole file
+   here would make every number below wrong by whatever the team pool holds. */
+const MINE = MOCK_RESULTS.filter((report) => report.assignedTo === 'ME').length;
+
+/**
+ * The reading pane reads the analytes the CLIENT answered, not the ones that
+ * happened to arrive on the row.
+ *
+ * Over fixtures those are the same list, which is exactly why this stub answers
+ * a different one: a pane rendering `report.analytes` agrees with a pane
+ * rendering the fetched ones on every fixture, and differs only where the list
+ * carries none - which is every live page.
+ */
+function withFetchedAnalytes(): WorklistClient {
+  const base = createWorklistClient();
+  return {
+    ...base,
+    results: {
+      list: async (query) => {
+        const page = await base.results.list(query);
+        return { ...page, data: page.data.map((report) => ({ ...report, analytes: [] })) };
+      },
+      analytes: () =>
+        Promise.resolve({
+          data: [
+            {
+              code: '2947-0',
+              label: 'Sodium, fetched',
+              value: 141,
+              unit: 'mmol/L',
+              low: 135,
+              high: 145,
+            },
+          ],
+          /* One analyte back and four reported: the pane has to say so, and a
+             fixture whose total equalled its rows could not tell a pane that
+             states the residual from one that assumes there is none. */
+          page: { page: 1, pageSize: 100, total: 4, totalPages: 1 },
+        }),
+    },
+  };
+}
+
+describe('ResultsScreen, counting what it is showing', () => {
+  it('reads the open report values from the client rather than from the row', async () => {
+    render(<ResultsScreen client={withFetchedAnalytes()} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('Sodium, fetched')).toBeInTheDocument();
+    expect(within(table).getByText('141 mmol/L')).toBeInTheDocument();
+  });
+
+  /* The analytes of one report paginate too, and the reading pane is where a
+     clinician decides on values: a table that is silently short is the one
+     shape it must not take. */
+  it('names the analytes the laboratory reported and this table does not hold', async () => {
+    render(<ResultsScreen client={withFetchedAnalytes()} now={MOCK_NOW} />);
+    await screen.findByRole('table');
+
+    expect(screen.getByText(/^3 more analytes were reported for this panel/)).toBeInTheDocument();
+  });
+
+  it('says nothing about a residual when the table holds every analyte', async () => {
+    render(<ResultsScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByRole('table');
+
+    expect(screen.queryByText(/more analytes? (was|were) reported/)).not.toBeInTheDocument();
+  });
+
+  it('counts the queue and claims no absence when there is none', async () => {
+    render(<ResultsScreen client={createWorklistClient()} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    expect(screen.getByText(`${MINE} results`)).toBeInTheDocument();
+    expect(screen.queryByText(/not listed/)).not.toBeInTheDocument();
+  });
+
+  it('states the rows it matched but cannot render, beside the total', async () => {
+    render(<ResultsScreen client={withRefused(3)} now={MOCK_NOW} />);
+
+    const rows = within(
+      await screen.findByRole('list', { name: 'Results to review' })
+    ).getAllByRole('listitem');
+    expect(rows).toHaveLength(MINE);
+    expect(screen.getByText(`${MINE + 3} results`)).toBeInTheDocument();
+    expect(screen.getByText(/^3 of the results on this page are not listed/)).toBeInTheDocument();
+  });
+
+  it('names the window when the queue matched more results than the page holds', async () => {
+    render(<ResultsScreen client={truncated(35)} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    expect(
+      screen.getByText(`${MINE} of ${MINE + 35} results.`, { exact: false })
+    ).toBeInTheDocument();
+    /* The bare total is what the reader would otherwise have read as the row
+       count, so it must not also be on the page. */
+    expect(screen.queryByText(`${MINE + 35} results`)).not.toBeInTheDocument();
+  });
+
+  it('asks for a window wider than the route default', async () => {
+    const base = createWorklistClient();
+    const list = vi.fn(base.results.list);
+    render(
+      <ResultsScreen client={{ ...base, results: { ...base.results, list } }} now={MOCK_NOW} />
+    );
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    /* 25 is the route's default and its clamp is higher, so a screen that asked
+       for nothing would silently take the first 25 of a busy morning. */
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ pageSize: 100 }));
+  });
+});
+
+/**
+ * The assignment control, now that every client can answer it.
+ *
+ * `/bff/v0/results` still serves no assignment filter - assignment is a `Task`
+ * fact rather than a column on the report - but `liveResults` asks the task
+ * collection and narrows the report read to what it answered (#535). So the
+ * control selects in both modes, and the screen no longer carries a statement
+ * about a queue it could not narrow.
+ */
+describe('ResultsScreen, the assignment control', () => {
+  function render_(): void {
+    render(<ResultsScreen client={createWorklistClient()} now={MOCK_NOW} />);
+  }
+
+  it('opens on my queue rather than on everyone', async () => {
+    render_();
+
+    const rows = within(
+      await screen.findByRole('list', { name: 'Results to review' })
+    ).getAllByRole('listitem');
+    expect(rows).toHaveLength(MINE);
+    expect(screen.getByLabelText('Assignment')).toHaveValue('ME');
+  });
+
+  it('offers all three queues as filters', async () => {
+    render_();
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    const options = within(screen.getByLabelText('Assignment')).getAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual(['Mine', 'Team pool', 'Everyone']);
+  });
+
+  /* Through the palette rather than `queryByText`: a command nobody has opened
+     the palette for is absent from the DOM whether or not the screen offers it,
+     so the cheap assertion passes over a screen that offers neither. */
+  it('offers both queues as commands', async () => {
+    render_();
+    await screen.findByRole('list', { name: 'Results to review' });
+
+    fireEvent.click(screen.getByRole('button', { name: /Search or run a command/ }));
+    await screen.findByRole('option', { name: /Sign the open result(?! with)/ });
+
+    expect(screen.getByRole('option', { name: /Show my results/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Show the team pool/ })).toBeInTheDocument();
   });
 });

@@ -208,4 +208,61 @@ describe.skipIf(!DATABASE_URL)('the Prisma repositories against Postgres', () =>
     expect(page.rows).toHaveLength(2);
     expect(page.total).toBeGreaterThanOrEqual(5);
   });
+
+  /*
+   * The `ids` filter, on the port that ships.
+   *
+   * It is here rather than only in `repositories.port-agreement.test.ts`
+   * because that file's oracle interprets a `where` rather than sending it:
+   * both sides of it are this repository's own code. What only Postgres can
+   * settle is that the clause Prisma is handed is one the database accepts and
+   * narrows with - the same gap that left 18 of 31 FHIR resources answering 500
+   * under a green suite (#305).
+   */
+  it('narrows to a named set of ids, and to none for an empty one', async () => {
+    const repositories = live.repositories(DEMO_TENANT_A);
+    const first = await repositories.patients.create({ ...patient, mrn: 'OR-named-1' });
+    const second = await repositories.patients.create({ ...patient, mrn: 'OR-named-2' });
+    await repositories.patients.create({ ...patient, mrn: 'OR-named-3' });
+
+    const query = { page: 1, pageSize: 25, sort: 'familyName', order: 'asc' } as const;
+    const named = await repositories.patients.list({ ...query, ids: [second.id, first.id] });
+
+    expect([...named.rows.map((row) => row.id)].sort()).toEqual([first.id, second.id].sort());
+    // The total is the narrowed set: a pager reading the whole index here would
+    // page off the end of its own request.
+    expect(named.total).toBe(2);
+
+    // Postgres answers `IN ()` as nothing, which is what `matches` answers for
+    // an empty set as well. A port that read it as "no filter" would hand a
+    // caller the whole index for a request that named nobody.
+    expect((await repositories.patients.list({ ...query, ids: [] })).total).toBe(0);
+  });
+
+  /*
+   * The same clause on the reports collection, which is where the sign-off
+   * queue's ME/TEAM filter lands: the task read names the reports and this is
+   * the query that fetches them (#535). A second table rather than a second
+   * assertion because `id` is a different column on a different model, and the
+   * clause Postgres accepts is the only thing the port-agreement oracle cannot
+   * settle.
+   */
+  it('narrows a page of reports to a named set of ids', async () => {
+    const repositories = live.repositories(DEMO_TENANT_A);
+    const subject = await repositories.patients.create({ ...patient, mrn: 'OR-report-ids' });
+    const report = {
+      patientId: subject.id,
+      code: '58410-2',
+      display: 'CBC with differential panel',
+    };
+    const first = await repositories.reports.create(report);
+    await repositories.reports.create(report);
+
+    const query = { page: 1, pageSize: 25, sort: 'issuedAt', order: 'asc' } as const;
+    const named = await repositories.reports.list({ ...query, ids: [first.id] });
+
+    expect(named.rows.map((row) => row.id)).toEqual([first.id]);
+    expect(named.total).toBe(1);
+    expect((await repositories.reports.list({ ...query, ids: [] })).total).toBe(0);
+  });
 });

@@ -8,8 +8,10 @@
  */
 
 export {
+  defaultMintRealtime,
   defaultProbe,
   defaultRunTurn,
+  mintRealtimeSession,
   probeAssistant,
   streamTurn,
   unreachableEvents,

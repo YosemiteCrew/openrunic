@@ -2,6 +2,7 @@
 
 import type { Translator } from '@openrunic/i18n';
 import { Button, IconButton, Select } from '@openrunic/ui';
+import type { CapturePort } from '@openrunic/voice';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 
@@ -15,9 +16,11 @@ import {
   FindAvailablePanel,
   findOpenSlots,
   givenName,
+  minutesBetween,
   ScheduleGrid,
   shiftDay,
   useClinicDay,
+  useSlotAsk,
 } from '@/components/schedule';
 import type { BookingDetails, OpenSlot, ScheduleProvider } from '@/components/schedule';
 import { ScheduleOverlays } from './ScheduleOverlays';
@@ -54,6 +57,8 @@ import { useTranslator } from '@/lib/i18n/messages';
 export interface ScheduleScreenProps {
   /** Injectable for tests. Defaults to the app's `api`. */
   client?: ApiClient;
+  /** The Find available microphone. Absent means the device's own; injected in tests. */
+  capture?: CapturePort | null;
 }
 
 interface ToastMessage {
@@ -273,7 +278,7 @@ function DayGrid({
   );
 }
 
-export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): ReactElement {
+export function ScheduleScreen({ client, capture }: Readonly<ScheduleScreenProps>): ReactElement {
   const t = useTranslator();
   const [day, setDay] = useState<string>(() => clinicToday());
   const [facilityId, setFacilityId] = useState<string>('');
@@ -319,7 +324,8 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
       typeDisplay: details.visitType,
       start: details.slot.start,
       end: details.slot.end,
-      durationMinutes: DEFAULT_SLOT_MINUTES,
+      /* A 45-minute request books 45 minutes, not the walk-in default. */
+      durationMinutes: minutesBetween(details.slot.start, new Date(details.slot.end)),
       ...(details.reason.trim() ? { reasonText: details.reason.trim() } : {}),
     })
   );
@@ -342,6 +348,8 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
       ),
     [appointments, columns, day, now]
   );
+
+  const [ask, setAsk, asked] = useSlotAsk(appointments, columns, day, now, DEFAULT_SLOT_MINUTES);
 
   const selected = appointments.find((appointment) => appointment.id === selectedId) ?? null;
 
@@ -475,6 +483,7 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
         facility: facility.name,
       })
     : t('schedule.day.description', { date: formatDate(t, day) });
+  const captureProps = capture === undefined ? {} : { capture };
 
   return (
     <AppShell
@@ -522,11 +531,16 @@ export function ScheduleScreen({ client }: Readonly<ScheduleScreenProps>): React
 
       {findingSlots && facility !== null ? (
         <FindAvailablePanel
-          slots={slots}
+          slots={asked}
           providers={columns}
-          durationMinutes={DEFAULT_SLOT_MINUTES}
+          ask={ask}
+          onAskChange={setAsk}
+          day={day}
+          today={clinicToday()}
+          onDayChange={setDay}
           onBook={setBookingSlot}
           onClose={() => setFindingSlots(false)}
+          {...captureProps}
         />
       ) : null}
 

@@ -117,6 +117,7 @@ import {
 } from './crud.js';
 import {
   attributedTo,
+  gateCharts,
   idParamSchema,
   policyOf,
   repositories,
@@ -145,6 +146,7 @@ import {
 const MISSING_ENCOUNTER = 'No such encounter.';
 const MISSING_NOTE = 'No such clinical note.';
 const MISSING_PRESCRIPTION = 'No such prescription.';
+const MISSING_FILL = 'No such prescription fill.';
 
 /* ------------------------------------------------------------ the tables */
 
@@ -411,17 +413,27 @@ function crudModules(): CrudModule[] {
         const input = parseQuery(c, prescriptionFillListQuerySchema);
         const { prescriptionFills } = repositories(c);
         const page = await prescriptionFills.list(toPrescriptionFillListQuery(input));
+        // Hand-registered, so it does not inherit the list gate `defineCrud`
+        // applies. A fill names a chart, and a list of chart data is a read of
+        // every chart it returns, so it needs the same relationship per row -
+        // before the DTOs form, so a refused list never serialises what it read.
+        await gateCharts(c, 'prescriptionFills', page.rows);
         return c.json(toListResponse(page, toPrescriptionFillDto));
       });
 
       router.get(`${base}/:id`, requirePermission('encounter.read'), async (c) => {
         const id = parseParam(c.req.param('id'), idParamSchema, 'id');
         const { prescriptionFills } = repositories(c);
-        const row = await prescriptionFills.findById(id);
-        if (row === null) {
-          throw ApiError.notFound('No such prescription fill.');
-        }
-        await requiredParentChart(c, 'prescriptionFills', row, 'No such prescription fill.');
+        // The read and the guard in one call, as everywhere else that reads a
+        // chart-bearing row by id. It answers the same 404 for a fill that is
+        // not there as for one this reader may not reach, so a separate null
+        // check would only be a second spelling of the first half.
+        const row = await requiredParentChart(
+          c,
+          'prescriptionFills',
+          await prescriptionFills.findById(id),
+          MISSING_FILL
+        );
         return c.json(toPrescriptionFillDto(row));
       });
 
@@ -587,7 +599,15 @@ export function clinicalRoutes(registry: AdapterRegistry): Hono<AppEnv> {
       });
       const fillsRecorded = fillsPage.total;
       const authorisedRefills = prescription.refills;
-      const refillsRemaining = Math.max(0, authorisedRefills - fillsRecorded);
+      // `refills` is FHIR `numberOfRepeatsAllowed`: the repeats allowed IN
+      // ADDITION to the original dispense. A fill is written on every dispense
+      // that names a prescription, the first one included (see the stock
+      // posting spec), so the first fill spends no refill and only the ones
+      // after it do. Counting every fill as a refill reports one repeat fewer
+      // than the prescriber authorised, which refuses a dispense the patient
+      // is entitled to.
+      const refillsUsed = Math.max(0, fillsRecorded - 1);
+      const refillsRemaining = Math.max(0, authorisedRefills - refillsUsed);
 
       return c.json({
         prescriptionId: id,
@@ -1420,7 +1440,7 @@ export function clinicalRouteContracts(): RouteContract[] {
       operationId: 'readPrescriptionRefillsRemaining',
       summary: 'Read the remaining refills for a prescription.',
       description:
-        'Returns the authorised refills, the number of fills recorded, and the difference as refills remaining. A fill is recorded on dispense and is append-only; this count is the authoritative remaining repeats for the prescription.',
+        'Returns the authorised refills, the number of fills recorded, and the refills remaining. A fill is recorded on dispense and is append-only. `authorisedRefills` is the repeats allowed in addition to the original dispense, so the first fill spends no refill and each one after it spends one; remaining is floored at zero.',
       tags: ['medications'],
       permission: 'encounter.read',
       pathParams: [{ name: 'id', description: 'Prescription id (UUIDv7).', schema: idParamSchema }],

@@ -73,6 +73,7 @@ describe('asking whether there is an assistant', () => {
           dataLeavesDeployment: true,
         },
         capabilities: [{ id: 'record.list', summary: 'Lists your own health record.' }],
+        dictation: null,
       },
     });
     expect(fetchImpl).toHaveBeenCalledWith(

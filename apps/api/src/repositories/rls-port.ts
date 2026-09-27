@@ -170,7 +170,7 @@ export function createSessionBoundPortFactory(runSession: TenantSessionRunner): 
       // The accepted finding the block above records, and its expiry. A
       // condition on its own was what this exception used to carry, and nothing
       // is told when a condition comes true.
-      // Owner: ankit-yc. Re-review by: 2026-12-05. Revisit condition: sooner, if
+      // Owner: maintainers. Re-review by: 2026-12-05. Revisit condition: sooner, if
       // a caller ever writes through this port outside a transaction.
       create: (args) => inSession((tx) => tx.model(name).create(args)), // nosec
       updateMany: (args) => inSession((tx) => tx.model(name).updateMany(args)), // nosec

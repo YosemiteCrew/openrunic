@@ -43,6 +43,15 @@ import type { AdministrativeGender, AppointmentStatus, TelehealthVisitStatus } f
 export interface PatientListQuery extends BaseQuery {
   /** Exact logical id. Backs the FHIR `_id` search parameter. */
   id?: string;
+  /**
+   * Several logical ids at once, intersected with `id` when both are given.
+   *
+   * A worklist sends this: a page of orders, results or tasks carries patient
+   * ids and no names, and the screen that renders it needs one read rather
+   * than one per row. An empty array is a filter that matches nothing, not an
+   * absent one.
+   */
+  ids?: readonly string[];
   /** Free text matched against family name, given name, preferred name and MRN. */
   q?: string;
   mrn?: string;
@@ -54,6 +63,25 @@ export interface PatientListQuery extends BaseQuery {
   active?: boolean;
   facilityId?: string;
   sort: 'familyName' | 'birthDate' | 'createdAt';
+}
+
+/**
+ * One id filter from the two ways a caller can ask for one.
+ *
+ * Resolved here rather than spread side by side because both write the same
+ * `where` key, and two clauses writing one key is how one of them silently
+ * stops applying - the same hazard `claimStatusFilter` exists for. Intersecting
+ * is the safe direction: a search that quietly widens hands somebody rows they
+ * did not ask for.
+ *
+ * `undefined` means no id filter. An empty array means one that matches
+ * nothing, which is what an impossible intersection deserves.
+ */
+function patientIdFilter(query: PatientListQuery): readonly string[] | undefined {
+  const { id, ids } = query;
+  if (ids === undefined) return id === undefined ? undefined : [id];
+  if (id === undefined) return ids;
+  return ids.includes(id) ? [id] : [];
 }
 
 function sameUtcDay(left: Date, right: Date): boolean {
@@ -192,7 +220,7 @@ export const patientSpec: CollectionSpec<
     // One conjunction, one line per filter. Every clause is "unconstrained, or
     // satisfied", so adding a filter adds a line rather than a branch.
     return (
-      equalsIfSet(query.id, row.id) &&
+      matchesIfSet(patientIdFilter(query), (wanted) => wanted.includes(row.id)) &&
       equalsIfSet(query.mrn, row.mrn) &&
       equalsIfSet(query.sexAtBirth, row.sexAtBirth) &&
       equalsIfSet(query.active, row.active) &&
@@ -207,8 +235,9 @@ export const patientSpec: CollectionSpec<
   },
 
   where(query: PatientListQuery) {
+    const wanted = patientIdFilter(query);
     return {
-      ...(query.id === undefined ? {} : { id: query.id }),
+      ...(wanted === undefined ? {} : { id: { in: [...wanted] } }),
       ...(query.mrn === undefined ? {} : { mrn: query.mrn }),
       ...(query.sexAtBirth === undefined ? {} : { sexAtBirth: query.sexAtBirth }),
       ...(query.family === undefined ? {} : { familyName: likeStartsWith(query.family) }),
@@ -435,16 +464,19 @@ export const telehealthVisitSpec: CollectionSpec<
   action: 'appointment',
   // No patient column: a visit points at an appointment, which is where the
   // chart is, and duplicating the patient here would give one visit two answers
-  // to whose it is, drifting the first time an appointment moved. Closed rather
-  // than open, as the second of two layers. The first is the route:
-  // `telehealthRoutes` is staff-only, because a patient reaches their own visit
-  // by the passwordless link they are sent and never manages a room. This is the
-  // structural backstop, so a telehealth route added without that guard still
-  // does not hand a compartment-bound caller every tenant's visit. It is safe
-  // now precisely because the guard runs first: `assertStaff` refuses a confined
-  // caller before the open-room preflight reads this table, so closing it here
-  // can no longer blind that duplicate-room check.
-  compartment: 'closed',
+  // to whose it is, drifting the first time an appointment moved. So the
+  // compartment follows the appointment instead: a patient-scoped token reads
+  // the visit for its own appointment and no other. That read is what the
+  // portal needs to offer a join; managing a room stays staff work, which
+  // `telehealthRoutes` enforces with `assertStaff` before it reads this table.
+  compartment: {
+    through: {
+      relation: 'appointment',
+      model: 'Appointment',
+      key: 'appointmentId',
+      column: 'patientId',
+    },
+  },
 
   newRow(input: TelehealthVisitCreateInput): Writable<'TelehealthVisit'> {
     return {

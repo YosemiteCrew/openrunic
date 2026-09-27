@@ -767,6 +767,39 @@ fieldset {
   gap: var(--space-3);
 }
 
+/* Asking by voice sits inside the composer, below the field it types into, and
+   with no hairline of its own: it is a way of filling the box, not a setting. */
+.or-assistant__dictation {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.or-assistant__dictation-live {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.or-assistant__dictation p,
+.or-assistant__dictation-status {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.or-assistant__dictation-status:empty {
+  display: none;
+}
+
+/* The words as they are recognised: the clinician's own sentence, being
+   checked, so body ink rather than secondary, and italic because it is
+   provisional until it lands in the box. */
+.or-assistant__dictation .or-assistant__dictation-heard {
+  font-style: italic;
+  color: var(--text-ink);
+}
+
 .or-assistant__composer {
   display: flex;
   flex-direction: column;
@@ -2684,6 +2717,33 @@ fieldset {
 .or-slots__item {
   display: flex;
   gap: var(--space-2);
+  align-items: center;
+}
+
+/* The request above the open slots: the sentence and its button on one line
+   while there is room, the button under the field when there is not. */
+.or-slot-request {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.or-slot-request__ask {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-end;
+}
+
+.or-slot-request__ask > :first-child {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.or-slot-request__day {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
   align-items: center;
 }
 

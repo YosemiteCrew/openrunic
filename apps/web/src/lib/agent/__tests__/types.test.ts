@@ -193,6 +193,7 @@ describe('parseAgentCapabilities', () => {
           approval: 'never',
         },
       ],
+      dictation: null,
     });
   });
 

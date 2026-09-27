@@ -41,6 +41,20 @@ export const principalCapabilitiesDtoSchema = z
      * same thing are byte-identical and a client may compare them.
      */
     permissions: z.array(z.string()),
+    /**
+     * The caller's own `User` id, when the caller is a member of staff.
+     *
+     * Null for a patient or a service principal, whose subject identifies a
+     * different table entirely. It is here because several staff surfaces are
+     * defined in terms of the caller - a personal task inbox is
+     * `assigneeUserId` equal to this - and the browser had no way to name
+     * itself: it holds a bearer token that the API resolves to a subject, and
+     * nothing in the token is the API's own identifier for that person.
+     *
+     * Publishing it discloses nothing: it is the id of whoever is already
+     * holding the token.
+     */
+    userId: z.uuid().nullable(),
   })
   .meta({ id: 'PrincipalCapabilities' });
 
@@ -49,6 +63,7 @@ export function sessionRoutes(): Hono<AppEnv> {
 
   router.get('/me', (c) => {
     const policy = policyOf(c);
+    const principal = c.get('principal');
     if (policy === undefined) {
       /* A wiring assertion, not a path a client can reach: the policy context is
          built by middleware for every route under this mount. */
@@ -62,6 +77,9 @@ export function sessionRoutes(): Hono<AppEnv> {
          independently configured locales. See the comparator for the
          measurement. */
       permissions: [...policy.permissions].sort(byPermissionId),
+      /* `actorType`, not a uuid shape test: a Patient id is a uuid too, and
+         answering one here would point a staff query at the wrong table. */
+      userId: principal?.actorType === 'user' ? principal.subject : null,
     });
   });
 
@@ -76,7 +94,7 @@ export function sessionRouteContracts(): RouteContract[] {
       operationId: 'readOwnCapabilities',
       summary: 'What the caller may do.',
       description:
-        "Returns the caller's own roles and the permissions the API resolved from them. Requires a bearer token and no capability: a principal may always read its own. Published so a client can disable an action it knows will be refused rather than offering it and failing after the click. It is not a security boundary - every route still enforces its own permission.",
+        "Returns the caller's own roles and the permissions the API resolved from them. Requires a bearer token and no capability: a principal may always read its own. Published so a client can disable an action it knows will be refused rather than offering it and failing after the click. It is not a security boundary - every route still enforces its own permission. It also carries the caller's own `User` id, null unless the caller is staff, because a surface defined in terms of the caller - a personal inbox, work assigned to me - cannot be asked for by a client that cannot name itself.",
       tags: ['platform'],
       authenticatedOnly: true,
       responses: [

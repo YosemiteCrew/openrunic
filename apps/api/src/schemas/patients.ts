@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import type { PatientListQuery, PatientRow } from '../repositories/types.js';
 
-import { paginationQueryFields, sortOrderField } from './pagination.js';
+import { MAX_PAGE_SIZE, paginationQueryFields, sortOrderField } from './pagination.js';
 
 /**
  * The patient list contract.
@@ -15,6 +15,26 @@ import { paginationQueryFields, sortOrderField } from './pagination.js';
  */
 export const patientListQuerySchema = z.strictObject({
   ...paginationQueryFields,
+  /**
+   * A named set of logical ids, comma-separated, at most one page of them.
+   *
+   * What a worklist sends to name its rows: a page of orders, results or tasks
+   * carries patient ids and no names, and this is the only port that answers a
+   * page of them in one request.
+   *
+   * It discloses nothing new. An unfiltered page of this route already returns
+   * these rows, with these fields, to this permission and under the same
+   * facility narrowing; naming the ids can only return fewer of them.
+   *
+   * Split before validation rather than after, so an empty value, a trailing
+   * comma or one bad id is a 400 naming the position rather than a silently
+   * shorter set. The same reason the object is strict.
+   */
+  ids: z
+    .string()
+    .transform((value) => value.split(','))
+    .pipe(z.array(z.uuid()).min(1).max(MAX_PAGE_SIZE))
+    .optional(),
   /** Free text over family name, given name, preferred name and MRN. */
   q: z.string().min(1).max(128).optional(),
   mrn: z.string().min(1).max(32).optional(),
@@ -38,6 +58,7 @@ export function toPatientListQuery(input: PatientListQueryInput): PatientListQue
   return {
     page: input.page,
     pageSize: input.pageSize,
+    ...(input.ids === undefined ? {} : { ids: input.ids }),
     ...(input.q === undefined ? {} : { q: input.q }),
     ...(input.mrn === undefined ? {} : { mrn: input.mrn }),
     ...(input.family === undefined ? {} : { family: input.family }),

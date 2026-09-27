@@ -37,6 +37,27 @@ describe('GET /bff/v0/me', () => {
     }
   });
 
+  it('names the caller only when the caller is a member of staff', async () => {
+    /* Driven off `actorType` rather than a list of tokens written here: the
+       whole point of the field is that a Patient id and a User id are both
+       uuids, so the only thing separating them is which table the subject is
+       in. Both arms come from `DEMO_PRINCIPALS`, and the assertion below
+       proves the set contains both. */
+    const seen = new Set<string>();
+    for (const [token, principal] of DEMO_PRINCIPALS) {
+      const response = await app().request('/bff/v0/me', { headers: bearer(token) });
+      const body = (await response.json()) as { userId: string | null };
+      seen.add(principal.actorType);
+
+      expect(body.userId, token).toBe(principal.actorType === 'user' ? principal.subject : null);
+    }
+
+    /* Without this the loop passes on a set of staff principals alone, which is
+       the one shape that cannot tell the two arms apart. */
+    expect(seen).toContain('user');
+    expect(seen).toContain('patient');
+  });
+
   it('separates the roles the UI has to tell apart', async () => {
     /* The one fact #313 turns on: the clinician may sign an order and the biller
        may not. Asserted as a difference rather than as two memberships, because

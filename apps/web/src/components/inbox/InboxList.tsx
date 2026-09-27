@@ -3,12 +3,11 @@
 import { Badge, Button, Icon, Tag } from '@openrunic/ui';
 import type { ReactElement } from 'react';
 
-import { mockPatientById } from '@/lib/api';
-import type { InboxItem } from '@/lib/api';
+import type { InboxItem, PatientLookup } from '@/lib/api';
 import { formatDateTime, formatMrn, formatName } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
-import { INBOX_STREAM_ICON, INBOX_STREAM_LABEL_KEYS } from './streams';
+import { INBOX_STREAM_ACTION_KEYS, INBOX_STREAM_ICON, INBOX_STREAM_LABEL_KEYS } from './streams';
 import { SlaBadge } from './SlaBadge';
 
 /**
@@ -29,6 +28,8 @@ export interface InboxListProps {
   onClaim: (item: InboxItem) => void;
   /** Ids already claimed in this session, so the row stops offering it. */
   claimedIds: string[];
+  /** Names a row's patient. Resolved by the screen, one read for the page. */
+  patientNamed: PatientLookup;
 }
 
 export function InboxList({
@@ -37,6 +38,7 @@ export function InboxList({
   onComplete,
   onClaim,
   claimedIds,
+  patientNamed,
 }: Readonly<InboxListProps>): ReactElement {
   const t = useTranslator();
   const claimed = new Set(claimedIds);
@@ -44,7 +46,7 @@ export function InboxList({
   return (
     <ul className="or-inbox__list" aria-label={t('inbox.list.label')}>
       {items.map((item) => {
-        const patient = mockPatientById(item.patientId);
+        const patient = patientNamed(item.patientId);
         const mine = item.assignedTo === 'ME' || claimed.has(item.id);
         return (
           <li
@@ -65,7 +67,20 @@ export function InboxList({
                     <span className="or-mono or-muted">{formatMrn(patient.mrn)}</span>
                   </>
                 ) : (
-                  <strong>{t('inbox.list.practiceWide')}</strong>
+                  /* Three states, not two. A task with no patient is
+                     practice-wide; a task with a patient this build cannot
+                     name is not, and saying so would move somebody's work out
+                     of their chart in the one line a reader scans for it.
+                     Unnamed is now the residual it should always have been -
+                     an id the directory read could not resolve - rather than
+                     every live row. */
+                  <strong>
+                    {t(
+                      item.patientId === null
+                        ? 'inbox.list.practiceWide'
+                        : 'inbox.list.unnamedPatient'
+                    )}
+                  </strong>
                 )}
               </span>
               <span className="or-inbox__summary">{item.summary}</span>
@@ -83,7 +98,7 @@ export function InboxList({
 
             <span className="or-inbox__actions">
               <Button variant="secondary" size="sm" onClick={() => onComplete(item)}>
-                {item.actionLabel}
+                {t(INBOX_STREAM_ACTION_KEYS[item.stream])}
               </Button>
               {mine ? null : (
                 <Button

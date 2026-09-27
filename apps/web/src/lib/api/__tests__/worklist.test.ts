@@ -115,4 +115,15 @@ describe('createWorklistClient', () => {
     const client = createWorklistClient({ results: [], orders: [], inbox: [] });
     await expect(client.results.list()).resolves.toMatchObject({ data: [] });
   });
+
+  /* `OrderListQuery` advertises a window because the route applies one (#539).
+     A fixture client that took the field and ignored it would answer a question
+     the live client does not, and every screen test would agree with it. */
+  it('applies the window the orders query asks for', async () => {
+    const client = createWorklistClient();
+    const page = await client.orders.list({ pageSize: 2 });
+    expect(page.data).toHaveLength(2);
+    expect(page.page.total).toBe(MOCK_ORDERS.length);
+    expect(page.refused).toBe(0);
+  });
 });

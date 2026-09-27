@@ -4,8 +4,7 @@ Every automated control that runs against a change, what it protects, and where 
 process lives. If you are here because a gate failed, find it in the table and read its row.
 
 Nothing in this document is aspirational: each gate is a workflow in `.github/workflows/` that runs
-today. Where a gate is dormant because the files it inspects have not been written yet, that is
-stated explicitly.
+today.
 
 ## The gates
 
@@ -21,7 +20,7 @@ stated explicitly.
 | **Synthetic data only**                          | `phi-guard.yml`         | Real patient data reaching the repository                         | Allowlists in `scripts/ci/phi-guard.mjs` |
 | **Release provenance**                           | `release-attest.yml`    | An operator installing an image nobody can trace                  | Not applicable                           |
 | **Exception expiry**                             | `exception-expiry.yml`  | An accepted finding outliving the reasoning that accepted it      | None, deliberately: it guards the others |
-| **Aikido coverage**                              | `aikido-coverage.yml`   | The Aikido review declining to run and reporting nothing at all   | None, deliberately: it guards a scanner  |
+| **Aikido coverage**                              | `aikido-coverage.yml`   | The Aikido review declining to run and reporting nothing at all   | `.github/aikido-plan.json` (see below)   |
 | PR governance                                    | `pr-governance.yml`     | Untitled or unscoped changes entering history                     | None                                     |
 
 The gates in bold are the subject of the rest of this page. The others are documented where they are
@@ -31,7 +30,7 @@ configured.
 
 `supply-chain.yml` runs `syft scan dir:.`, which inventories the **dependency tree**. It never sees a
 built image, so the operating-system packages in the base layer - openssl, zlib, busybox, the
-packages CVEs are actually filed against - were scanned by nothing.
+packages CVEs are actually filed against - need a scan of their own.
 
 That matters more here than in a typical project: openrunic ships images that clinics install and
 run on their own hardware. A vulnerable base layer is a vulnerable hospital server.
@@ -43,10 +42,6 @@ exception file (`.grype.yaml`).
 
 It also runs weekly on a schedule, because a base layer becomes vulnerable when a CVE is published,
 not when somebody commits.
-
-**Currently dormant.** No Dockerfile exists on this branch yet. Discovery exits 0 with an explanatory
-message, and the gate starts working on the first pull request that adds one - there is no switch to
-remember to flip.
 
 ## Infrastructure misconfiguration
 
@@ -80,8 +75,7 @@ What the Compose guard checks, and why each one:
 The guard reads the Compose file as JSON, converted by a pinned, checksum-verified `yq`. It does not
 parse YAML itself, because hand-rolled parsing is how static analysis quietly starts passing files it
 never understood. Its unit tests (`scripts/ci/compose-guard.test.mjs`) run on **every** pull request,
-even while no Compose file exists, so a regression in the guard is caught by the change that causes
-it.
+so a regression in the guard is caught by the change that causes it.
 
 Run it locally:
 
@@ -89,8 +83,6 @@ Run it locally:
 yq -o=json '.' docker-compose.yml | node scripts/ci/compose-guard.mjs -
 pnpm run check:compose:test
 ```
-
-**Currently dormant** for the same reason as the container scan, with the same automatic activation.
 
 ## Workflow security
 
@@ -176,17 +168,17 @@ exception or renew it with a fresh date and a note saying what was checked.
 ## Aikido coverage
 
 The two `Aikido Security:` contexts are posted by a GitHub App, so nothing in this repository
-decides whether they run. `Aikido Security: Deep Review` reported `skipped` on every pull request
-for an unmeasured number of weeks with the summary _"Aikido skipped this review because there are
-no credits left in the wallet"_, and that produced no red row, no notification, and no entry in any
-list a reviewer reads. `skipped` is neither a failure nor a success; the pull request page rendered
-what it renders when the review passes ([#408](https://github.com/YosemiteCrew/openrunic/issues/408)).
+decides whether they run. A review that declines reports `skipped`, which is neither a failure nor a
+success: it produces no red row, no notification, and no entry in any list a reviewer reads, and the
+pull request page renders what it renders when the review passes
+([#408](https://github.com/YosemiteCrew/openrunic/issues/408)).
 
-Topping the wallet up is an owner action. `aikido-coverage.yml` is the other half: it reads the
-check runs the app posted on the head and fails unless the conclusion is one of the three that mean
+`aikido-coverage.yml` makes that state visible. It reads the check runs the app posted on the
+head and fails unless the conclusion is one of the three that mean
 Aikido reached a verdict - `success`, `failure`, `timed_out` - printing the check's own
 `output.summary`, which names the cause where the conclusion cannot. Everything else declines,
-`skipped` and `action_required` included.
+`skipped` and `action_required` included, with one change once a plan file exists: a check outside
+this repository's plan that reports `skipped` is a notice rather than a failure (see below).
 
 The list is stated in that direction on purpose, and only the closed side of it is written down
 here. Naming the conclusions that decline leaves every value nobody thought of falling through to
@@ -213,16 +205,42 @@ would put an unchecked claim in the one place the gate may skip itself - `pull_r
 the fact, and a draft cannot merge. `ready_for_review` is a trigger so the gate starts the moment
 the exemption stops applying.
 
-The wallet does not reach `Aikido Security: check code`. Credits are consumed by six named
-features - Libraries, Deep Review, Security Audit, Pentest, Code Quality and CVE Exploitability
-Analysis - and the SAST/SCA pull request check is not one of them; on a cap the vendor's own
-sentence is that Aikido _"skips actions that would charge a credit until the limit resets"_
-([Wallet & Credits](https://help.aikido.dev/miscellaneous-info/wallet-and-credits), read
-2026-09-21). That is the question #408 left open and deliberately would not infer from `Deep
-Review`'s behaviour: an empty wallet silences the optional review and leaves the required context
-scanning, and a credited feature that runs out declines rather than passing. It is a vendor page
-rather than a measurement taken here, so it is dated; what agrees with it from this side is `check
-code` reporting `success` with a scan id on twelve consecutive heads while the wallet was empty.
+### The checks this repository's plan includes
+
+`.github/aikido-plan.json` lists the Aikido checks this repository's plan includes, as
+`{ "included": [<check name>] }`. Each listed check has to be posted on the head and reach a verdict.
+An Aikido check that is not listed and reports `skipped` is printed as a notice in the job output
+and on the run summary instead of failing the job; one that reports any other conclusion outside
+the three that count as a verdict still fails it.
+`Aikido Security: check code` has to be listed - the code refuses a plan without it - so a skipped
+`check code` fails on every head, bot-authored ones included. A file that is not valid JSON or not
+exactly that shape fails the job with a message naming the problem. With no file at all, every
+Aikido check has to run, as it did before the file existed.
+
+`Aikido Security: Deep Review` is not listed in that file, so a skipped Deep Review appears as a
+notice, except on a pull request whose head commit is bot-authored, where the exemption below
+covers it. Once it is added to `included`, a skipped Deep Review fails the job again.
+
+### The bot-authored head exemption, accepted 2026-09-22
+
+Aikido declines `Aikido Security: Deep Review` on any head whose latest commit was authored by a
+bot, with the summary _"Aikido skipped this review because the latest commit was authored by a
+bot"_. Nothing on such a branch can change that, so every dependabot pull request would otherwise
+carry a permanent red row on this check
+([#549](https://github.com/YosemiteCrew/openrunic/issues/549)).
+
+The guard excuses that, and only that: the pair `Aikido Security: Deep Review` + `skipped`, on a
+head whose **commit author** GitHub reports as a `Bot`, read from `commits/<sha>` as `.author.type`.
+It is keyed on that fact rather than on the vendor's sentence, for the same reason the draft
+exemption lives in the workflow. `BOT_EXEMPT` in `scripts/ci/aikido-coverage.mjs` is the pair;
+widening either half fails a test that asserts its membership directly.
+
+What is _not_ excused is the head. `Aikido Security: check code` is the required context on both
+rulesets and it runs on a bot-authored head, so it stays fully required there, and a head carrying
+only the excused check is its own verdict rather than a pass.
+
+Revisit condition: if the vendor adds a way to run Deep Review on a bot-authored head, remove this
+exemption rather than keep it.
 
 ## Release provenance
 

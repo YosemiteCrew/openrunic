@@ -71,6 +71,7 @@ const scripts = manifest.scripts ?? {};
  */
 const NOT_IN_VERIFY = {
   // Not checks.
+  preinstall: 'a lifecycle hook, not a check',
   prepare: 'a lifecycle hook, not a check',
   dev: 'starts the dev servers',
   format: 'the writing half of format:check, which is in the chain',

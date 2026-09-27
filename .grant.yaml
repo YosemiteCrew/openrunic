@@ -97,7 +97,7 @@ require-license: false
 #
 # ignore-packages:
 #   # package.json says "bsd" (nonstandard spelling); the LICENSE file is
-#   # plain BSD-3-Clause. Owner: ankit-yc. Re-review by: YYYY-MM-DD.
+#   # plain BSD-3-Clause. Owner: maintainers. Re-review by: YYYY-MM-DD.
 #   - some-package
 # Precedent, kept because the argument is right and the decision went the other
 # way. Read both halves before touching this.
@@ -150,7 +150,7 @@ ignore-packages:
   # the licence is not open source: the permission must not generalise to
   # anything else shipping the same nonstandard string.
   #
-  # Owner: ankit-yc. Re-review by: 2027-02-13, or sooner if either package
+  # Owner: maintainers. Re-review by: 2027-02-13, or sooner if either package
   # changes its LICENSE, or if openrunic ever offers a hosted service in which
   # code analysis is a substantial part of the value.
   - react-doctor
@@ -161,7 +161,7 @@ ignore-packages:
   # VERIFIED 2026-08-22 by reading node_modules/.pnpm/deslop-js@0.9.11/.../LICENSE.
   # It reaches the tree only through react-doctor, so it is in scope of exactly
   # the argument above and falls out the moment that dependency does.
-  # Owner: ankit-yc. Re-review by: 2027-02-13, with react-doctor.
+  # Owner: maintainers. Re-review by: 2027-02-13, with react-doctor.
   - deslop-js
 
   # ---------------------------------------------------------------------------
@@ -189,7 +189,7 @@ ignore-packages:
   # The condition that invalidates this: elkjs appearing in the runtime image,
   # or any source file importing it. Either turns this from a dev-tool footnote
   # into a licensing decision that has to be made properly.
-  # Owner: ankit-yc. Re-review by: 2027-02-22.
+  # Owner: maintainers. Re-review by: 2027-02-22.
   - elkjs
 
   # @visx/vendor: package.json says "MIT and ISC", which is not valid SPDX (that
@@ -204,7 +204,7 @@ ignore-packages:
   #
   # Also dev-time only: it reaches the tree through @prisma/studio-core, which
   # the Dockerfile prune removes.
-  # Owner: ankit-yc. Re-review by: 2027-02-22.
+  # Owner: maintainers. Re-review by: 2027-02-22.
   - '@visx/vendor'
 
   # seq-queue: no `license` field in package.json at all, which is the single
@@ -215,7 +215,7 @@ ignore-packages:
   #
   # It arrives via mysql2 under the `prisma` CLI, which is a devDependency and
   # is deleted from the published image by the same prune stage.
-  # Owner: ankit-yc. Re-review by: 2027-02-22, or sooner if the package
+  # Owner: maintainers. Re-review by: 2027-02-22, or sooner if the package
   # publishes a release that declares its licence, at which point this entry
   # should simply be deleted.
   - seq-queue
@@ -239,7 +239,7 @@ ignore-packages:
   # and `@ai-sdk/provider@4.0.7` is still the only thing in the lockfile that
   # depends on it.
   #
-  # Owner: ankit-yc. Re-review by: 2027-02-22, with the three entries above.
+  # Owner: maintainers. Re-review by: 2027-02-22, with the three entries above.
   # Revisit condition: json-schema changing its licence expression, or ceasing
   # to reach the tree, at which point this entry should simply be deleted.
   - json-schema

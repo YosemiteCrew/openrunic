@@ -46,7 +46,7 @@ export const patientRouteContracts: RouteContract[] = [
     operationId: 'listPatients',
     summary: 'Search the patient index.',
     description:
-      'Offset-paginated. `q` is free text over name and MRN; `family` and `given` are case-insensitive prefix matches, matching the FHIR `string` search semantic.',
+      'Offset-paginated. `q` is free text over name and MRN; `family` and `given` are case-insensitive prefix matches, matching the FHIR `string` search semantic. `ids` names a set of logical ids, comma-separated, for a caller holding a page of ids and no names.',
     tags: ['patients'],
     permission: 'patient.read',
     query: patientListQuerySchema,

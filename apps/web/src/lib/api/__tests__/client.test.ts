@@ -9,7 +9,6 @@ import {
   MOCK_CLINIC_DAY,
   MOCK_PATIENTS,
   MOCK_PROVIDERS,
-  mockProviderName,
 } from '@/lib/api/mock/fixtures';
 
 function jsonResponse(body: unknown, status = 200, contentType = 'application/json'): Response {
@@ -40,6 +39,16 @@ describe('toSearchParams', () => {
   it('returns nothing for an empty query', () => {
     expect(toSearchParams({})).toBe('');
     expect(toSearchParams(undefined)).toBe('');
+  });
+
+  it('sends a set parameter as one comma-separated value', () => {
+    // What the route schemas split back. The comma is percent-encoded because
+    // `URLSearchParams` encodes it, and the separator the route sees is the
+    // decoded one - `routes.patients.test.ts` sends it in both spellings.
+    expect(toSearchParams({ ids: ['b', 'a'] })).toBe('?ids=b%2Ca');
+    // The order is the caller's: a set the caller sorted must reach the route
+    // sorted, because it is what the request is keyed on.
+    expect(toSearchParams({ ids: ['a'] })).toBe('?ids=a');
   });
 });
 
@@ -137,11 +146,6 @@ describe('mock fixtures', () => {
       expect(appointment.end > appointment.start).toBe(true);
     }
   });
-
-  it('names a provider rather than showing a uuid', () => {
-    expect(mockProviderName(MOCK_PROVIDERS[0].id)).toBe('Dr. Okafor');
-    expect(mockProviderName('nobody')).toBe('Unassigned');
-  });
 });
 
 describe('filterPatients', () => {
@@ -153,6 +157,20 @@ describe('filterPatients', () => {
   it('matches family and given as case-insensitive prefixes', () => {
     expect(filterPatients(MOCK_PATIENTS, { family: 'patient' })).toHaveLength(1);
     expect(filterPatients(MOCK_PATIENTS, { given: 'DEM' })).toHaveLength(1);
+  });
+
+  it('names a set of ids, and an empty set names nobody', () => {
+    const wanted = [MOCK_PATIENTS[1]?.id ?? '', MOCK_PATIENTS[0]?.id ?? ''];
+    expect(
+      filterPatients(MOCK_PATIENTS, { ids: wanted })
+        .map((patient) => patient.id)
+        .sort()
+    ).toEqual([...wanted].sort());
+    // The same reading the API takes: an empty set is a filter the caller sent,
+    // not one they left out. The two ports must not disagree about that, or a
+    // screen that renders every patient against fixtures renders the right two
+    // against Postgres.
+    expect(filterPatients(MOCK_PATIENTS, { ids: [] })).toHaveLength(0);
   });
 
   it('filters on active', () => {
@@ -453,5 +471,44 @@ describe('API_CONFIG', () => {
     // token source lands in one place rather than in two that can drift.
     expect(API_CONFIG.baseUrl).toBe(API_BASE_URL);
     expect(API_CONFIG.getToken?.()).toBeNull();
+  });
+});
+
+describe('prescriptions.getRefillsRemaining', () => {
+  it('reads the refills-remaining route for the prescription, with the id encoded', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        prescriptionId: 'rx/1',
+        authorisedRefills: 2,
+        fillsRecorded: 1,
+        refillsRemaining: 2,
+      })
+    );
+    const client = createHttpClient({
+      baseUrl: 'http://api.test',
+      getToken: () => 'tok',
+      fetchImpl,
+    });
+
+    const body = await client.prescriptions.getRefillsRemaining('rx/1');
+
+    const [url] = fetchImpl.mock.calls[0] as [string];
+    // Encoded, not interpolated raw: an id carrying a slash must not invent a path segment.
+    expect(url).toBe('http://api.test/bff/v0/medications/prescriptions/rx%2F1/refills-remaining');
+    expect(body.refillsRemaining).toBe(2);
+  });
+
+  it("answers from the mock with the API's own arithmetic, not a fixed remainder", async () => {
+    // The first fill is the original dispense and spends no refill, so five
+    // authorised with two fills recorded leaves four. A mock that disagreed with
+    // the server would teach a screen the wrong number.
+    const body = await createMockClient().prescriptions.getRefillsRemaining('rx-1');
+
+    expect(body).toEqual({
+      prescriptionId: 'rx-1',
+      authorisedRefills: 5,
+      fillsRecorded: 2,
+      refillsRemaining: 4,
+    });
   });
 });

@@ -7,9 +7,10 @@ import type { BadgeTone, TableColumn } from '@openrunic/ui';
 import { useMemo } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
-import { mockPatientById, mockProviderName } from '@/lib/api';
-import type { ResultAnalyte, ResultReport } from '@/lib/api';
+import type { PatientLookup, ProviderLookup, ResultAnalyte, ResultReport } from '@/lib/api';
 import { formatDate, formatDateTime, formatMrn, formatName, formatVital } from '@/lib/format';
+import { counted } from '@/lib/i18n/counted';
+import type { CountedMessage } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
 
 import { ResultFlagBadge } from './ResultFlagBadge';
@@ -48,7 +49,27 @@ export interface ResultReadingProps {
   onSignWithNote: () => void;
   /** Fixed "now" for the age line. */
   now: string;
+  /**
+   * Analytes the laboratory reported and this table does not hold, when the
+   * report is longer than one page.
+   *
+   * Stated rather than assumed away. A clinician decides on the values in front
+   * of them, and a value table that is silently short is the one shape this
+   * pane must not take - the same argument the queue makes about its own
+   * window, one level down.
+   */
+  unshownAnalytes?: number;
+  /** Names the report's patient. Resolved by the screen, one read for the page. */
+  patientNamed: PatientLookup;
+  /** Names the ordering clinician, from the staff directory. */
+  providerNamed: ProviderLookup;
 }
+
+/** What the laboratory reported and this page of the report does not hold. */
+const MORE_ANALYTES: CountedMessage = {
+  oneKey: 'results.reading.moreAnalytesOne',
+  otherKey: 'results.reading.moreAnalytesOther',
+};
 
 /** The table's columns, as catalogue keys. See `OrdersScreen` for why. */
 const COLUMNS: readonly (Omit<TableColumn, 'header'> & { headerKey: string })[] = [
@@ -65,9 +86,12 @@ export function ResultReading({
   onSign,
   onSignWithNote,
   now,
+  unshownAnalytes = 0,
+  patientNamed,
+  providerNamed,
 }: Readonly<ResultReadingProps>): ReactElement {
   const t = useTranslator();
-  const patient = mockPatientById(report.patientId);
+  const patient = patientNamed(report.patientId);
   const isSigned = report.status === 'SIGNED' || signed !== null;
   const columns = useMemo<TableColumn[]>(
     () => COLUMNS.map(({ headerKey, ...column }) => ({ ...column, header: t(headerKey) })),
@@ -91,10 +115,10 @@ export function ResultReading({
                 {signed
                   ? t('results.reading.signedAtBy', {
                       at: formatDateTime(t, signed.at, 'dense'),
-                      clinician: mockProviderName(report.orderedBy),
+                      clinician: clinicianName(t, providerNamed, report.orderedBy),
                     })
                   : t('results.reading.signedBy', {
-                      clinician: mockProviderName(report.orderedBy),
+                      clinician: clinicianName(t, providerNamed, report.orderedBy),
                     })}
               </span>
             </>
@@ -131,16 +155,25 @@ export function ResultReading({
         <div className="or-cluster">
           <ResultFlagBadge flag={report.flag} />
           <span className="or-small">
-            {t('results.reading.collected', {
-              collected: formatDateTime(t, report.collectedAt, 'dense'),
-              reported: formatDateTime(t, report.reportedAt, 'dense'),
-              performer: report.performer,
-            })}
+            {/* Two messages rather than one with an empty slot: a report whose
+                specimen has no collection time has nothing to say about when it
+                was collected, and "Collected  , reported ..." is a sentence
+                about a missing value rather than about the report. */}
+            {report.collectedAt
+              ? t('results.reading.collected', {
+                  collected: formatDateTime(t, report.collectedAt, 'dense'),
+                  reported: formatDateTime(t, report.reportedAt, 'dense'),
+                  performer: report.performer ?? t('results.notRecorded'),
+                })
+              : t('results.reading.reported', {
+                  reported: formatDateTime(t, report.reportedAt, 'dense'),
+                  performer: report.performer ?? t('results.notRecorded'),
+                })}
           </span>
         </div>
         <p className="or-small or-muted">
           {t('results.reading.orderedBy', {
-            clinician: mockProviderName(report.orderedBy),
+            clinician: clinicianName(t, providerNamed, report.orderedBy),
             today: formatDate(t, now),
           })}
         </p>
@@ -164,15 +197,37 @@ export function ResultReading({
           caption={t('results.reading.caption', { panel: report.panel })}
         />
       ) : null}
+
+      {unshownAnalytes > 0 ? (
+        <p className="or-caption">
+          <strong>{counted(t, MORE_ANALYTES, unshownAnalytes)}</strong>
+        </p>
+      ) : null}
     </Card>
   );
+}
+
+/**
+ * The ordering clinician, or that nobody is recorded.
+ *
+ * Two absences, one word. The report may carry no service request behind it at
+ * all - every live row until that join lands (#535) - and the directory read
+ * may not name the id it does carry. Neither is a name, and inventing one from
+ * the id would put a stranger on a signed result.
+ */
+function clinicianName(
+  t: Translator,
+  providerNamed: ProviderLookup,
+  providerId: string | null
+): string {
+  return providerNamed(providerId) ?? t('results.notRecorded');
 }
 
 function toRow(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode> {
   const reading = formatVital(t, {
     label: analyte.label,
     value: analyte.value,
-    unit: analyte.unit,
+    unit: analyte.unit ?? '',
     range: { low: analyte.low, high: analyte.high },
     decimals: analyte.decimals,
   });
@@ -185,7 +240,9 @@ function toRow(t: Translator, analyte: ResultAnalyte): Record<string, ReactNode>
         <span className="or-mono or-muted">{analyte.code}</span>
       </span>
     ),
-    // The unit rides with the value: a bare number is never a reading.
+    // The unit rides with the value: a bare number is never a reading. The
+    // trim is for the analyte that has no unit to ride with - a culture, a
+    // presence - rather than for a unit nobody filled in.
     value: `${reading.value} ${reading.unit}`.trim(),
     range: reading.rangeText ?? t('results.reading.noRange'),
     state: (

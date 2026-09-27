@@ -10,9 +10,16 @@ import type { Command } from '@/components/command';
 import { ResultList, ResultReading, SignNoteModal } from '@/components/results';
 import type { SignedNote } from '@/components/results';
 import { AppShell } from '@/components/shell';
-import { AsyncBoundary, FixtureDataNotice, Toast, isEmptyList } from '@/components/state';
-import { isBulkSignable, MOCK_NOW, mockPatientById, useResults } from '@/lib/api';
-import type { Assignment, ResultFlag, ResultReport, WorklistClient } from '@/lib/api';
+import { AsyncBoundary, Toast, isEmptyList } from '@/components/state';
+import {
+  isBulkSignable,
+  MOCK_NOW,
+  usePatientNames,
+  useProviderNames,
+  useResultAnalytes,
+  useResults,
+} from '@/lib/api';
+import type { Assignment, ResultFlag, ResultPage, ResultReport, WorklistClient } from '@/lib/api';
 import { formatName } from '@/lib/format';
 import { formatCount } from '@openrunic/i18n';
 
@@ -51,6 +58,39 @@ const ASSIGNMENT_FILTERS: readonly { value: Assignment | ''; labelKey: string }[
   { value: '', labelKey: 'results.list.assignment.everyone' },
 ];
 
+/**
+ * The rows on this page, when the queue matched more than one page of them.
+ *
+ * The same statement the orders ledger makes and for the same reason: this
+ * screen has no pager, so a total above a full list is a number about the
+ * clinic rather than about the list, and 60 over 25 rows reads exactly like 60
+ * over 22 (#539).
+ */
+const RESULT_WINDOW: CountedMessage = {
+  oneKey: 'results.list.windowOne',
+  otherKey: 'results.list.windowOther',
+};
+
+const RESULT_COUNT: CountedMessage = {
+  oneKey: 'results.list.countOne',
+  otherKey: 'results.list.countOther',
+};
+
+/** The rows the queue refused, because `SERVICE_REQUEST_CATEGORIES` is wider than OR-01's three. */
+const NOT_SHOWN: CountedMessage = {
+  oneKey: 'results.list.notShownOne',
+  otherKey: 'results.list.notShownOther',
+};
+
+/**
+ * The window this screen asks for, clamped by the route to `MAX_PAGE_SIZE`.
+ *
+ * The same size the orders ledger asks for, and for the same reason: a queue
+ * under a couple of hundred rows is one a clinician finishes, and re-fetching
+ * while they scan it flashes a skeleton over rows they were already reading.
+ */
+const PAGE_SIZE = 100;
+
 const BATCH_ACTION: CountedMessage = {
   oneKey: 'results.bulk.actionOne',
   otherKey: 'results.bulk.actionOther',
@@ -76,6 +116,39 @@ interface Signing {
   withNote: boolean;
 }
 
+/**
+ * What the rows on screen are a count of, and what is absent from them.
+ *
+ * Two separate facts, deliberately not one sentence. A row absent because it is
+ * on a page this screen cannot reach and a row absent because the queue has no
+ * word for its category have different remedies, and a reader who cannot tell
+ * them apart cannot act on either.
+ */
+function QueueStatement({ page }: Readonly<{ page: ResultPage }>): ReactElement {
+  const t = useTranslator();
+  /* The rows the route put on this page, the refused ones included, so the two
+     sum to the window without reading `pageSize` - the route's clamp, not
+     necessarily what it applied. */
+  const windowed = page.data.length + page.refused;
+
+  return (
+    <>
+      <p className="or-caption">
+        {windowed < page.page.total
+          ? counted(t, RESULT_WINDOW, windowed, {
+              total: formatCount(page.page.total, t.locale),
+            })
+          : counted(t, RESULT_COUNT, page.page.total)}
+      </p>
+      {page.refused > 0 ? (
+        <p className="or-caption">
+          <strong>{counted(t, NOT_SHOWN, page.refused)}</strong>
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 export interface ResultsScreenProps {
   /** Injectable for tests. Defaults to the app's worklist client. */
   client?: WorklistClient;
@@ -83,69 +156,27 @@ export interface ResultsScreenProps {
   now?: string;
 }
 
-export function ResultsScreen({
-  client,
-  now = MOCK_NOW,
-}: Readonly<ResultsScreenProps>): ReactElement {
+/**
+ * The verbs this screen offers the command palette.
+ *
+ * A hook rather than a block inside the screen, because it is the one part of
+ * `ResultsScreen` with no markup in it.
+ */
+function useResultCommands({
+  selected,
+  bulkCandidates,
+  requestSign,
+  setAssignment,
+  setBulkOpen,
+}: Readonly<{
+  selected: ResultReport | null;
+  bulkCandidates: readonly ResultReport[];
+  requestSign: (report: ResultReport | null, withNote: boolean) => void;
+  setAssignment: (assignment: Assignment) => void;
+  setBulkOpen: (open: boolean) => void;
+}>): Command[] {
   const t = useTranslator();
-  const [assignment, setAssignment] = useState<Assignment | ''>('ME');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [signed, setSigned] = useState<Record<string, SignedNote>>({});
-  const [signing, setSigning] = useState<Signing | null>(null);
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
-
-  const results = useResults(assignment ? { assignedTo: assignment } : {}, { client });
-
-  const assignmentFilters = useMemo<SelectOption[]>(
-    () => ASSIGNMENT_FILTERS.map((filter) => ({ value: filter.value, label: t(filter.labelKey) })),
-    [t]
-  );
-
-  const reports = useMemo(() => {
-    const rows = results.data?.data ?? [];
-    return [...rows].sort(
-      (a, b) => FLAG_ORDER[a.flag] - FLAG_ORDER[b.flag] || b.reportedAt.localeCompare(a.reportedAt)
-    );
-  }, [results.data]);
-
-  const openCount = reports.filter(
-    (report) => report.status === 'UNREVIEWED' && !signed[report.id]
-  ).length;
-  const bulkCandidates = reports.filter((report) => isBulkSignable(report) && !signed[report.id]);
-
-  const selected = reports.find((report) => report.id === selectedId) ?? reports[0] ?? null;
-
-  const signOne = useCallback(
-    (report: ResultReport, note: string | null) => {
-      setSigned((previous) => ({ ...previous, [report.id]: { at: now, note } }));
-      setSigning(null);
-      setToast({
-        title: t('results.signed.title', { panel: report.panel }),
-        message: note ? t('results.signed.messageWithNote') : t('results.signed.message'),
-      });
-    },
-    [t, now]
-  );
-
-  const signBulk = useCallback(() => {
-    const stamped: Record<string, SignedNote> = {};
-    for (const report of bulkCandidates) stamped[report.id] = { at: now, note: null };
-    setSigned((previous) => ({ ...previous, ...stamped }));
-    setBulkOpen(false);
-    setToast({
-      title: counted(t, BATCH_SIGNED, bulkCandidates.length),
-      message: t('results.bulk.message'),
-    });
-  }, [t, bulkCandidates, now]);
-
-  const requestSign = useCallback((report: ResultReport | null, withNote: boolean) => {
-    if (!report) return;
-    setSelectedId(report.id);
-    setSigning({ report, withNote });
-  }, []);
-
-  const commands = useMemo<Command[]>(
+  return useMemo<Command[]>(
     () => [
       {
         id: 'results.sign',
@@ -188,10 +219,109 @@ export function ResultsScreen({
         perform: () => setAssignment('TEAM'),
       },
     ],
-    [t, selected, bulkCandidates.length, requestSign]
+    /* The two setters are `useState`'s own and stable, but they arrive here as
+       parameters rather than from a `useState` call this hook can see, so they
+       are named rather than assumed. */
+    [t, selected, bulkCandidates.length, requestSign, setAssignment, setBulkOpen]
+  );
+}
+
+export function ResultsScreen({
+  client,
+  now = MOCK_NOW,
+}: Readonly<ResultsScreenProps>): ReactElement {
+  const t = useTranslator();
+  /* The clinician's own sign-off queue is what this screen is for, and every
+     client can now answer it: over fixtures from the row, and over the API from
+     the `RESULT` task that carries the assignment (#535). */
+  const [assignment, setAssignment] = useState<Assignment | ''>('ME');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [signed, setSigned] = useState<Record<string, SignedNote>>({});
+  const [signing, setSigning] = useState<Signing | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
+
+  const results = useResults(
+    { pageSize: PAGE_SIZE, ...(assignment ? { assignedTo: assignment } : {}) },
+    { client }
   );
 
-  const selectedPatient = selected ? mockPatientById(selected.patientId) : undefined;
+  const assignmentFilters = useMemo<SelectOption[]>(
+    () => ASSIGNMENT_FILTERS.map((filter) => ({ value: filter.value, label: t(filter.labelKey) })),
+    [t]
+  );
+
+  const reports = useMemo(() => {
+    const rows = results.data?.data ?? [];
+    return [...rows].sort(
+      (a, b) => FLAG_ORDER[a.flag] - FLAG_ORDER[b.flag] || b.reportedAt.localeCompare(a.reportedAt)
+    );
+  }, [results.data]);
+
+  const openCount = reports.filter(
+    (report) => report.status === 'UNREVIEWED' && !signed[report.id]
+  ).length;
+  const bulkCandidates = reports.filter((report) => isBulkSignable(report) && !signed[report.id]);
+
+  const selected = reports.find((report) => report.id === selectedId) ?? reports[0] ?? null;
+
+  /* The queue and the reading pane name the same people, so both read one
+     directory rather than one each. Keyed on the page the route answered, not
+     on the selection: opening a row is not a new set of patients. */
+  const patientNamed = usePatientNames(reports.map((report) => report.patientId));
+  const providerNamed = useProviderNames();
+
+  /* The analytes of the one report being read. Fetched here rather than with
+     the list, because one call per row is N+1 on a queue built to be scanned
+     and the values of a report nobody opened are never looked at. */
+  const analytes = useResultAnalytes(selected?.id ?? null, { client });
+  const reading =
+    selected && analytes.data ? { ...selected, analytes: analytes.data.data } : selected;
+  /* What the laboratory reported and this page of the report does not hold. The
+     route paginates these too, so the pane states its own residual the way the
+     queue states the rows it refused. */
+  const unshownAnalytes = analytes.data
+    ? Math.max(analytes.data.page.total - analytes.data.data.length, 0)
+    : 0;
+
+  const signOne = useCallback(
+    (report: ResultReport, note: string | null) => {
+      setSigned((previous) => ({ ...previous, [report.id]: { at: now, note } }));
+      setSigning(null);
+      setToast({
+        title: t('results.signed.title', { panel: report.panel }),
+        message: note ? t('results.signed.messageWithNote') : t('results.signed.message'),
+      });
+    },
+    [t, now]
+  );
+
+  const signBulk = useCallback(() => {
+    const stamped: Record<string, SignedNote> = {};
+    for (const report of bulkCandidates) stamped[report.id] = { at: now, note: null };
+    setSigned((previous) => ({ ...previous, ...stamped }));
+    setBulkOpen(false);
+    setToast({
+      title: counted(t, BATCH_SIGNED, bulkCandidates.length),
+      message: t('results.bulk.message'),
+    });
+  }, [t, bulkCandidates, now]);
+
+  const requestSign = useCallback((report: ResultReport | null, withNote: boolean) => {
+    if (!report) return;
+    setSelectedId(report.id);
+    setSigning({ report, withNote });
+  }, []);
+
+  const commands = useResultCommands({
+    selected,
+    bulkCandidates,
+    requestSign,
+    setAssignment,
+    setBulkOpen,
+  });
+
+  const selectedPatient = selected ? patientNamed(selected.patientId) : undefined;
   const selectedPatientName = selectedPatient
     ? formatName(selectedPatient.name, 'full')
     : t('results.thisPatient');
@@ -233,7 +363,6 @@ export function ResultsScreen({
       }
     >
       <ScreenCommands commands={commands} />
-      <FixtureDataNotice />
       <AsyncBoundary
         state={results}
         subject={t('results.list.subject')}
@@ -250,7 +379,7 @@ export function ResultsScreen({
           ),
         }}
       >
-        {() => (
+        {(page: ResultPage) => (
           <div className="or-results">
             <Card
               tone="cream"
@@ -267,16 +396,21 @@ export function ResultsScreen({
                   const report = reports.find((candidate) => candidate.id === id) ?? null;
                   requestSign(report, false);
                 }}
+                patientNamed={patientNamed}
               />
+              <QueueStatement page={page} />
             </Card>
 
-            {selected ? (
+            {reading ? (
               <ResultReading
-                report={selected}
-                signed={signed[selected.id] ?? null}
+                report={reading}
+                signed={signed[reading.id] ?? null}
                 now={now}
-                onSign={() => requestSign(selected, false)}
-                onSignWithNote={() => requestSign(selected, true)}
+                onSign={() => requestSign(reading, false)}
+                onSignWithNote={() => requestSign(reading, true)}
+                unshownAnalytes={unshownAnalytes}
+                patientNamed={patientNamed}
+                providerNamed={providerNamed}
               />
             ) : null}
           </div>

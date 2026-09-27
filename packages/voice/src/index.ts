@@ -9,6 +9,14 @@
 export { createPlatformReadback, platformSpeech } from './platform.js';
 export type { PlatformSpeech } from './platform.js';
 
+export { createHostedReadback } from './hosted-readback.js';
+export type {
+  HostedReadbackEgress,
+  HostedSynthesiser,
+  Playback,
+  PlaybackHandlers,
+} from './hosted-readback.js';
+
 export { readbackAvailability } from './ports.js';
 export type {
   ReadbackAvailability,
@@ -21,6 +29,50 @@ export type {
 
 export { SILENT, endingFor, readbackReducer, speakableTurns } from './readback.js';
 export type { ReadbackAction, ReadbackEnding, ReadbackState, Speaking } from './readback.js';
+
+export { captureAvailability } from './capture.js';
+export type {
+  CaptureAvailability,
+  CaptureEvent,
+  CaptureFailure,
+  CapturePort,
+  CaptureSession,
+  CaptureUnavailable,
+} from './capture.js';
+
+export { createPlatformCapture, platformRecognition } from './platform-capture.js';
+export type { OnDeviceQuery, PlatformRecognition, Recognition } from './platform-capture.js';
+
+export { createRealtimeCapture } from './realtime-capture.js';
+export type {
+  RealtimeConnection,
+  RealtimeEgress,
+  RealtimeHandlers,
+  RealtimeTransport,
+} from './realtime-capture.js';
+
+export { browserMedia, createBrowserRealtimeTransport } from './browser-realtime.js';
+export type {
+  BrowserMedia,
+  BrowserRealtimeOptions,
+  RealtimeCredential,
+  RealtimeMint,
+} from './browser-realtime.js';
+
+export { chooseCapture, readHostedDictation, readRealtimeCredential } from './hosted-dictation.js';
+export type { ChosenCapture, DictationEgress, HostedDictation } from './hosted-dictation.js';
+
+export { IDLE, appendDictation, dictationReducer } from './dictation.js';
+export type {
+  DictationAction,
+  DictationEnding,
+  DictationPhase,
+  DictationSession,
+  DictationState,
+} from './dictation.js';
+
+export { useDictation } from './useDictation.js';
+export type { Dictation } from './useDictation.js';
 
 export { usePageHidden } from './usePageHidden.js';
 

@@ -150,11 +150,10 @@ Ask for anything clinical, the schedule or a chart or the billing screens, and
 you are redirected to a sign-in screen instead, carrying where you were headed
 so that is where you land afterwards.
 
-That screen asks for an access token rather than a username and a password,
-because a token is what a credential is in this system today: the API resolves a
-bearer token to a user, and nothing anywhere checks a password. A development
-build also lists the demo identities on it as buttons, so signing in as one is a
-click rather than something to type.
+That screen asks for an access token rather than a username and a password: the
+API resolves a bearer token to a user. A development build also lists the demo
+identities on it as buttons, so signing in as one is a click rather than
+something to type.
 
 **A production build offers none of them, and `docker compose` builds for
 production.** `apps/web/src/lib/auth/directory.ts` returns an empty list of
@@ -180,9 +179,7 @@ accepts six demo tokens directly. Put one of these in an
 
 The last three exist so that the jobs that are not an administrator's can be
 done without one. Reviewing who opened which chart, reconciling a physical count
-against the ledger, and looking without touching are each a separate grant, and
-before these tokens existed the only bundle holding any of them was `admin` -
-which holds everything, including breaking glass on a chart.
+against the ledger, and looking without touching are each a separate grant.
 
 These are not passwords and they are not secret. They are in the source code,
 and they exist so the demo practice can be looked at. See [Security](#security).

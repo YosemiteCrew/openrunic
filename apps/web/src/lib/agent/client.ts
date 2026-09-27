@@ -1,3 +1,6 @@
+import { readRealtimeCredential } from '@openrunic/voice';
+import type { RealtimeCredential } from '@openrunic/voice';
+
 import { BFF_BASE_PATH } from '@/lib/api';
 import type { ApiClientConfig } from '@/lib/api';
 
@@ -30,6 +33,7 @@ const ABSENT: AgentAvailability = { status: 'absent' };
 
 const CAPABILITIES_PATH = '/agent/tools';
 const TURNS_PATH = '/agent/turns';
+const REALTIME_PATH = '/agent/realtime/sessions';
 
 function agentUrl(config: ApiClientConfig, path: string): string {
   return `${config.baseUrl}${config.basePath ?? BFF_BASE_PATH}${path}`;
@@ -67,6 +71,32 @@ export async function probeAssistant(
   } catch {
     return ABSENT;
   }
+}
+
+/**
+ * Asks the API for a short-lived dictation credential.
+ *
+ * Told the language and nothing else: the chart is not named, so the service
+ * that transcribes is never told whose record is open. Rejects on anything
+ * other than a whole credential, which the transport reports as a microphone
+ * that stopped - the reader types instead.
+ */
+export async function mintRealtimeSession(
+  config: ApiClientConfig,
+  language: string,
+  signal: AbortSignal
+): Promise<RealtimeCredential> {
+  const fetchImpl = config.fetchImpl ?? globalThis.fetch;
+  const headers = agentHeaders(config, 'application/json');
+  headers.set('content-type', 'application/json');
+  const response = await fetchImpl(agentUrl(config, REALTIME_PATH), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ language }),
+    signal,
+  });
+  if (!response.ok) throw new Error('No dictation session was issued.');
+  return readRealtimeCredential(await response.json());
 }
 
 export interface AgentTurnRequest {

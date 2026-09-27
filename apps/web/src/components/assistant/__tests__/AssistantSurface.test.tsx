@@ -41,6 +41,7 @@ const LOCAL_CAPABILITIES: AgentCapabilities = {
       approval: 'never',
     },
   ],
+  dictation: null,
 };
 
 const ENABLED: AgentAvailability = { status: 'enabled', capabilities: LOCAL_CAPABILITIES };
@@ -49,6 +50,7 @@ const REMOTE: AgentAvailability = {
   status: 'enabled',
   capabilities: {
     tools: LOCAL_CAPABILITIES.tools,
+    dictation: null,
     model: {
       modelId: 'vendor/big',
       endpointHost: 'api.vendor.example',

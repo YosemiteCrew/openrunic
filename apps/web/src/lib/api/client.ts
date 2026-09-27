@@ -21,6 +21,7 @@ import type {
   ProblemDocument,
   RemittanceParseResult,
   RemittancePostResult,
+  ResultObservationDto,
   ServiceRequestDto,
   StatementDto,
   TaskDto,
@@ -96,7 +97,10 @@ export function toSearchParams(query: object | undefined): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined || value === null) continue;
-    params.set(key, String(value));
+    // A set parameter is one comma-separated value, which is what the route
+    // schemas split. Stated rather than left to `String(array)` doing it by
+    // accident, because the accident is silent the day one stops being an array.
+    params.set(key, Array.isArray(value) ? value.join(',') : String(value));
   }
   const serialized = params.toString();
   return serialized ? `?${serialized}` : '';
@@ -266,16 +270,26 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
         post<NoteAddendumDto>(`/notes/${segment(noteId)}/addenda`, body, signal),
     },
     orders: {
+      list: (query, signal) =>
+        get<ListResponse<ServiceRequestDto>>(`/orders${toSearchParams(query)}`, signal),
       sign: (id, signal) => post<ServiceRequestDto>(`/orders/${segment(id)}/sign`, {}, signal),
       transmit: (id, signal) =>
         post<ServiceRequestDto>(`/orders/${segment(id)}/transmit`, {}, signal),
       cancel: (id, signal) => post<ServiceRequestDto>(`/orders/${segment(id)}/cancel`, {}, signal),
     },
     results: {
+      list: (query, signal) =>
+        get<ListResponse<DiagnosticReportDto>>(`/results${toSearchParams(query)}`, signal),
+      listObservations: (id, query, signal) =>
+        get<ListResponse<ResultObservationDto>>(
+          `/results/${segment(id)}/observations${toSearchParams(query)}`,
+          signal
+        ),
       review: (id, signal) =>
         post<DiagnosticReportDto>(`/results/${segment(id)}/review`, {}, signal),
     },
     tasks: {
+      list: (query, signal) => get<ListResponse<TaskDto>>(`/tasks${toSearchParams(query)}`, signal),
       complete: (id, body, signal) =>
         post<TaskDto>(`/tasks/${segment(id)}/complete`, body ?? {}, signal),
     },

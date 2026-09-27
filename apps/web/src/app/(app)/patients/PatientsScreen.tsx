@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCount } from '@openrunic/i18n';
 import type { Translator } from '@openrunic/i18n';
 import { Button, Card, Input } from '@openrunic/ui';
 import { useMemo, useState } from 'react';
@@ -47,6 +48,31 @@ const ROSTER_COUNT: CountedMessage = {
   otherKey: 'patients.roster.countOther',
 };
 
+/**
+ * The rows on this page, when the practice matched more than one page of them.
+ *
+ * The roster asks for one window and has no pager, so a bare total above a full
+ * table is a number about the practice and not about the table - 240 over 100
+ * rows reads exactly like 240 over 240, and only one of those is hiding
+ * anything. Stating the window separates them: the reader is told which number
+ * the rows below belong to, and that the rest are not simply absent.
+ */
+const ROSTER_WINDOW: CountedMessage = {
+  oneKey: 'patients.roster.windowOne',
+  otherKey: 'patients.roster.windowOther',
+};
+
+/**
+ * The window this screen asks for, clamped by the route to `MAX_PAGE_SIZE`.
+ *
+ * The same size the order ledger asks for and for the same reason: a roster a
+ * clinician scans is one they finish, and re-fetching mid-scan flashes a
+ * skeleton over rows they were already reading. It is not a promise that every
+ * patient fits - when they do not, {@link ROSTER_WINDOW} says so rather than
+ * the table growing a pager nothing else on this screen has.
+ */
+const PAGE_SIZE = 100;
+
 export function PatientsScreen({ client }: Readonly<PatientsScreenProps>): ReactElement {
   const t = useTranslator();
   const [search, setSearch] = useState('');
@@ -55,7 +81,7 @@ export function PatientsScreen({ client }: Readonly<PatientsScreenProps>): React
 
   const view = viewById(viewId);
   const query = useMemo(
-    () => ({ ...view.query, q: search.trim() || undefined, pageSize: 100 }),
+    () => ({ ...view.query, q: search.trim() || undefined, pageSize: PAGE_SIZE }),
     [search, view]
   );
   const state = usePatients(query, { client });
@@ -145,18 +171,29 @@ export function PatientsScreen({ client }: Readonly<PatientsScreenProps>): React
           ),
         }}
       >
-        {(page) => (
-          <>
-            <PatientTable
-              patients={page.data}
-              asOf={asOf}
-              caption={tableCaption(t(view.labelKey), search, t)}
-            />
-            <p className="or-caption or-roster__count">
-              {counted(t, ROSTER_COUNT, page.page.total)}
-            </p>
-          </>
-        )}
+        {(page) => {
+          /* The rows the route actually put on this page. Read off `data` and
+             never off `page.pageSize`, which is the clamp the route would allow
+             and not what it sent - the roster refuses nothing, so the rows it
+             rendered are the whole window. */
+          const windowed = page.data.length;
+          return (
+            <>
+              <PatientTable
+                patients={page.data}
+                asOf={asOf}
+                caption={tableCaption(t(view.labelKey), search, t)}
+              />
+              <p className="or-caption or-roster__count">
+                {windowed < page.page.total
+                  ? counted(t, ROSTER_WINDOW, windowed, {
+                      total: formatCount(page.page.total, t.locale),
+                    })
+                  : counted(t, ROSTER_COUNT, page.page.total)}
+              </p>
+            </>
+          );
+        }}
       </AsyncBoundary>
     </AppShell>
   );

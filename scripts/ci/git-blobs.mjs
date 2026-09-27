@@ -21,11 +21,11 @@ import { spawnSync } from 'node:child_process';
  * invisible to every function in this file.
  *
  * The tests are in `advisory-ids.test.mjs`, under the heading they were written
- * under. They stayed because they need that file's `gitRepo` fixture, and
- * because two of them assert what the guard does with what this returns - a
- * symlink's blob is never scanned, a binary one is skipped - which is the pair
- * rather than either half. Moving them is mechanical if a second consumer ever
- * makes this module's own behaviour the subject.
+ * under. They stayed because two of them assert what the guard does with what
+ * this returns - a symlink's blob is never scanned, a binary one is refused -
+ * which is the pair rather than either half. Moving them is mechanical if a
+ * second consumer ever makes this module's own behaviour the subject; the
+ * `gitRepo` fixture they need is now `git-repo-fixture.mjs`.
  */
 
 /**

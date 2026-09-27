@@ -19,7 +19,7 @@
  * transcribed by a third party and nothing on the screen says so.
  *
  * **Nothing here takes a record, an identifier or a question.** A session is a
- * language and an id the caller made up. An adapter is never told whose portal
+ * language and an id the caller made up. An adapter is never told whose surface
  * it is listening in, what is on the screen, or what was asked before, so a
  * swapped-in adapter cannot widen what it hears any more than a swapped-in voice
  * could widen what it says.

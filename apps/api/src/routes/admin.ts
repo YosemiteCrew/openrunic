@@ -7,6 +7,7 @@ import { requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
 import { byIdentifier } from '../policy/permissions.js';
 import type { ScopedRow } from '../repositories/rows.js';
+import { OPEN_TASK_STATUSES } from '../repositories/specs/orders.js';
 import {
   worklistQuerySchema,
   worklistResponseSchema,
@@ -52,9 +53,6 @@ import { awaiting } from './referrals.js';
  * counted as a whole one is the failure worth avoiding here.
  */
 const WORKLIST_LIMIT = 5000;
-
-/** The task statuses that mean the work is still in flight. */
-const OPEN_TASK_STATUSES = ['OPEN', 'IN_PROGRESS', 'ON_HOLD'] as const;
 
 const iso = (value: Date | null): string | null => value?.toISOString() ?? null;
 

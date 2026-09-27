@@ -6,18 +6,21 @@ grateful to researchers who report responsibly.
 
 ## Supported versions
 
-openrunic follows [Semantic Versioning](https://semver.org/). The first release is **0.1.0**.
+openrunic follows [Semantic Versioning](https://semver.org/).
 
 Security fixes are made on the **most recent release line only**. There is no long-term-support
 line and nothing is backported to an older minor. With a `0.x` major and a small maintainer group,
 a support promise we cannot keep would be worse than an honest one, so the remedy for an older
-install is always to upgrade.
+install is always to upgrade. Security fixes are free of charge.
 
-| Release line              | Supported                                                                     |
-| ------------------------- | ----------------------------------------------------------------------------- |
-| 0.1.x                     | Yes. This is the current line                                                 |
-| Earlier lines             | None exist yet. When 0.2.0 ships, 0.1.x stops receiving fixes on the same day |
-| `dev` and `main` branches | Yes. Fixes land here first and reach installations in the next release        |
+| Release line                       | Supported                                                              |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| The most recent minor release line | Yes                                                                    |
+| Every earlier line                 | No. A line stops receiving fixes the day the next minor ships          |
+| `dev` and `main` branches          | Yes. Fixes land here first and reach installations in the next release |
+
+Which line that is appears on the
+[Releases page](https://github.com/YosemiteCrew/openrunic/releases), not here.
 
 Two consequences worth stating plainly. Because the major version is `0`, upgrading to collect a
 security fix can mean absorbing a breaking change; that is a real cost, and you should not first
@@ -48,22 +51,11 @@ the write-up is not polished.
   ship a fix before any public disclosure. We will usually be much faster, and we are happy to
   coordinate on a timeline if the fix is complex.
 
-## How dependency advisories are handled
+## How fixes are announced
 
-Dependabot **alerts** are on, so an advisory against a dependency is visible in the Security tab
-the moment it is published. Dependabot **security updates** - the feature that opens a pull request
-per advisory - are deliberately off, for two reasons: those pull requests ignore the configured
-target branch and always open against the default branch, which is the release branch a clinic
-installs from; and one pull request per advisory produces a queue nobody reviews properly.
-
-Instead, every dependency change arrives in a single weekly pull request against the integration
-branch, where the full gate runs: build, lint, type-check, tests with coverage floors, SBOM
-generation, vulnerability scanning and licence policy. Moving to current releases is what fixes
-most advisories, and the pooled pull request is reviewed as one change rather than skimmed as
-twelve.
-
-An advisory that cannot wait for the weekly run is raised by hand on a branch off the integration
-branch and promoted immediately. Turning security updates back on is not the remedy.
+Once a fix is released, we publish a security advisory on this repository and list the fix in the
+release notes. The advisory names the affected versions, the impact and severity, and how to
+update.
 
 ## Safe harbor
 

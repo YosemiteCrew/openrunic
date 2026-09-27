@@ -57,12 +57,11 @@ Each carries an owner and a re-review date.
 identifiers verified as AGPL-compatible, or it is a named package exception with the reason written
 down.
 
-It used to adjudicate far fewer packages than it appeared to. syft picks catalogers by source type,
-a `dir:` scan gets only the ones tagged `declared`, and the cataloger that reads installed
-`package.json` files is tagged `installed` - so every JavaScript package in the SBOM came from
-`pnpm-lock.yaml`, which carries no licences, and the gate was deciding twelve packages out of 1202
-while reporting a pass. Fixed in `supply-chain.yml` by selecting the package cataloger explicitly.
-The gate now reads 1169 packages, 1206 npm entries of which declare a licence.
+syft picks catalogers by source type: a `dir:` scan gets only the ones tagged `declared`, and the
+cataloger that reads installed `package.json` files is tagged `installed`. Left at the default,
+every JavaScript package in the SBOM would come from `pnpm-lock.yaml`, which carries no licences,
+so `supply-chain.yml` selects the package cataloger explicitly. The gate reads 1169 packages, 1206
+npm entries of which declare a licence.
 
 `require-license` is still false, and the reason is now the shape of the SBOM rather than the state
 of the tree: it contains 105 GitHub Actions and workflow artifacts that have no licence to declare,
@@ -184,17 +183,15 @@ These are **required** on both `dev` and `main`, and a red one makes a pull requ
 | `Aikido Security: check code`       | SAST findings in application and infrastructure code                                                     |
 | `Promotion source` (on `main` only) | Anything reaching `main` other than a promotion of `dev`                                                 |
 
-Two scanners for secrets is deliberate rather than redundant. They disagree: Gitleaks matches
-patterns, GitGuardian scores entropy and validates some findings against live services, and each has
-caught things the other did not. In a repository that will hold clinical records, the cost of running
-both is a few seconds per pull request and the cost of running one is finding out later which one
-had the blind spot.
+Two scanners for secrets is deliberate rather than redundant. They use different methods: Gitleaks
+matches patterns, while GitGuardian scores entropy and validates some findings against live
+services. In a repository that will hold clinical records, running both costs a few seconds per pull
+request.
 
-**Aikido and GitGuardian were advisory until 2026-08-14.** That was wrong for what this project is:
-"the security scanner is red but the merge went through" is a sentence that should not be possible in
-a health record system, whatever the finding turns out to be. Making them required means a false
-positive now blocks a merge until somebody looks at it, which is the intended cost - the alternative
-is a red badge nobody has to answer for.
+The security scanners are required because "the security scanner is red but the merge went through"
+is a sentence that should not be possible in a health record system, whatever the finding turns out
+to be. A false positive therefore blocks a merge until somebody looks at it, which is the intended
+cost - the alternative is a red badge nobody has to answer for.
 
 The exception process below is what keeps that cost bounded: a verified false positive is recorded,
 with its reasoning and a revisit condition, and stops blocking. What it does not do is stop being
@@ -205,12 +202,21 @@ read.
 Three rules, each learned from a grouped bump that carried thirteen updates and four independent
 breaks.
 
-**`engines.node` states what CI tests, not what happens to work.** It reads `^22.12`, matching
-`.nvmrc` and the Node the workflows install. It used to read `>=22.12`, which admitted Node 25 and
-26 - versions nothing here has ever run. A contributor on one of those gets a local result that
-disagrees with CI, and the disagreement is invisible: during that bump a failure was diagnosed twice
-as "an artifact of my local Node" and was neither time. Say the supported range and let the install
-refuse rather than let the drift happen quietly.
+**`engines.node` states the floor, and the install checks the major.** `engines.node` reads
+`>=22.12`, and with `engine-strict` pnpm refuses an older Node before it resolves anything. The
+major is checked by the root `preinstall` script, `scripts/ci/node-version.mjs`: on any major other
+than the one in `.nvmrc`, which is the Node the workflows install, it prints the reason and
+`pnpm install` exits non-zero. It does not stop the install from starting. pnpm 10 runs the root
+`preinstall` only after it has resolved the tree, written the lockfile, linked `node_modules` and
+run the dependency build scripts it allows, so on the wrong major all of that has already happened
+when the check fails. What the check guarantees is that such an install does not finish green and
+that the root `prepare` step does not run. `--ignore-scripts` skips it.
+
+A contributor on another major would get a local result that disagrees with CI, and the
+disagreement is invisible: during one bump a failure was diagnosed twice as "an artifact of my local
+Node" and was neither time. The major is checked at install rather than in `engines` because
+lockfile-only updates run no package code and do not have to run on the same Node; `--lockfile-only`
+runs no lifecycle scripts, so it never reaches the check.
 
 **Majors arrive in their own pull request.** Minor and patch updates - which are nearly always safe,
 and which carry most security fixes - stay pooled and land quickly. Majors are the ones that break,

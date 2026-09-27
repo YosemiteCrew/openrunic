@@ -6,8 +6,7 @@ import { Badge, Button } from '@openrunic/ui';
 import { useRef } from 'react';
 import type { KeyboardEvent, ReactElement } from 'react';
 
-import { mockPatientById } from '@/lib/api';
-import type { ResultAnalyte, ResultReport } from '@/lib/api';
+import type { PatientLookup, ResultAnalyte, ResultReport } from '@/lib/api';
 import { formatDateTime, formatMrn, formatName, formatVital, vitalState } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
@@ -39,7 +38,10 @@ function headline(t: Translator, report: ResultReport): string {
     const reading = formatVital(t, {
       label: outOfRange.label,
       value: outOfRange.value,
-      unit: outOfRange.unit,
+      // '' rather than the null the observation carried: `formatVital` renders
+      // the unit beside the value and an analyte with no unit is one with
+      // nothing to render there, not one with the word "null" to render.
+      unit: outOfRange.unit ?? '',
       range: { low: outOfRange.low, high: outOfRange.high },
       decimals: outOfRange.decimals,
     });
@@ -75,6 +77,8 @@ export interface ResultListProps {
   onSign: (id: string) => void;
   /** Ids signed in this session, so the row can say so without a refetch. */
   signedIds: string[];
+  /** Names a row's patient. Resolved by the screen, one read for the page. */
+  patientNamed: PatientLookup;
 }
 
 export function ResultList({
@@ -83,6 +87,7 @@ export function ResultList({
   onSelect,
   onSign,
   signedIds,
+  patientNamed,
 }: Readonly<ResultListProps>): ReactElement {
   const t = useTranslator();
   const listRef = useRef<HTMLUListElement>(null);
@@ -122,7 +127,7 @@ export function ResultList({
   return (
     <ul ref={listRef} className="or-results__list" aria-label={t('results.queue.title')}>
       {reports.map((report) => {
-        const patient = mockPatientById(report.patientId);
+        const patient = patientNamed(report.patientId);
         const isSigned = report.status === 'SIGNED' || signed.has(report.id);
         return (
           <li key={report.id} className="or-result-row" data-selected={report.id === selectedId}>
@@ -145,7 +150,7 @@ export function ResultList({
               <span className="or-small or-muted">
                 {t('results.row.reported', {
                   at: formatDateTime(t, report.reportedAt, 'dense'),
-                  performer: report.performer,
+                  performer: report.performer ?? t('results.notRecorded'),
                 })}
               </span>
             </button>

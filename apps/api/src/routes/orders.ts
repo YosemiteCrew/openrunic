@@ -598,26 +598,24 @@ function transitionRoutes(): Hono<AppEnv> {
       NO_REPORT
     );
 
-    // Finish the RESULT task that put this report in the clinician's queue.
-    // The task is linked by subjectType='DiagnosticReport' and subjectId=reportId,
-    // and is assigned to the clinician who reviews it.
+    // Finish every open RESULT task for this report, whoever holds it: the
+    // team pool and a colleague's queue should not keep a signed-off result.
     const tasks = repos.tasks;
     const taskPage = await tasks.list({
       page: 1,
-      pageSize: 1,
+      pageSize: 100,
       type: 'RESULT',
       subjectType: 'DiagnosticReport',
       subjectId: id,
-      assigneeUserId: reviewedById,
       statusIn: ['OPEN', 'IN_PROGRESS', 'ON_HOLD'] as const,
       sort: 'createdAt',
       order: 'asc',
     });
-    const task = taskPage.rows[0];
-    if (task !== undefined) {
+    const completedAt = new Date();
+    for (const task of taskPage.rows) {
       await tasks.update(task.id, {
         status: 'DONE',
-        completedAt: new Date(),
+        completedAt,
         completedById: reviewedById,
         outcome: 'Reviewed and signed off',
       });

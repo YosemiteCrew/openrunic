@@ -1262,6 +1262,41 @@ describe('results', () => {
     expect(task!.completedAt).not.toBeNull();
   });
 
+  it('completes RESULT tasks in the team pool and in a colleague queue', async () => {
+    const { app, dataset } = seededApp();
+    seed(
+      dataset,
+      'Task',
+      makeTaskRow({
+        id: TASK_B,
+        assigneeType: 'TEAM',
+        assigneeUserId: null,
+        assigneeTeamKey: 'lab',
+      })
+    );
+    seed(dataset, 'Task', makeTaskRow({ id: TASK_C, assigneeUserId: OTHER_USER }));
+
+    await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, { body: {} });
+
+    const tasks = dataset.table('Task');
+    for (const id of [TASK_B, TASK_C]) {
+      const task = tasks.find((t) => t.id === id);
+      expect(task?.status).toBe('DONE');
+      expect(task?.completedById).toBe(CLINICIAN);
+    }
+  });
+
+  it('leaves a RESULT task for a different report open', async () => {
+    const { app, dataset } = seededApp();
+    seed(dataset, 'Task', makeTaskRow({ id: TASK_B, subjectId: REPORT_B }));
+
+    await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, { body: {} });
+
+    const task = dataset.table('Task').find((t) => t.id === TASK_B);
+    expect(task?.status).toBe('OPEN');
+    expect(task?.completedAt).toBeNull();
+  });
+
   it('refuses a sign-off from a service account holding the permission', async () => {
     const { app, dataset } = serviceApp();
     seed(dataset, 'DiagnosticReport', makeReportRow());

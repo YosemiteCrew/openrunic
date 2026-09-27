@@ -164,9 +164,28 @@ export interface UniqueBy<M extends PrismaModelName, TCreate> {
  * facility list. `closed` is for rows that belong to a chart only through a
  * join this layer does not perform: a compartment-restricted principal is
  * refused them wholesale rather than served a table nobody narrowed.
+ * `through` is for rows that belong to a chart through one parent row: the row
+ * is in the compartment when the parent its `key` points at carries the
+ * patient in `column`. Both storage ports follow the same foreign key, so the
+ * row still has a single answer to whose it is.
  */
 export type CompartmentRule<M extends PrismaModelName> =
-  { readonly column: keyof Row<M> & string } | 'open' | 'closed';
+  | { readonly column: keyof Row<M> & string }
+  | { readonly through: ParentCompartment<M> }
+  | 'open'
+  | 'closed';
+
+/** A parent row that decides a child's compartment. See {@link CompartmentRule}. */
+export interface ParentCompartment<M extends PrismaModelName> {
+  /** The Prisma relation field on this model that names the parent. */
+  readonly relation: string;
+  /** The parent's model. */
+  readonly model: PrismaModelName;
+  /** The foreign-key column on this model holding the parent's id. */
+  readonly key: keyof Row<M> & string;
+  /** The parent's patient column. */
+  readonly column: string;
+}
 
 export interface CollectionSpec<
   M extends PrismaModelName,

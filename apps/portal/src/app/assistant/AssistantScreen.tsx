@@ -51,7 +51,13 @@ import type { AssistantCapabilities } from '@/lib/assistant';
 import { useTranslator } from '@/lib/i18n/messages';
 import { useAsync } from '@/lib/useAsync';
 import { defaultMintRealtime } from '@/lib/assistant';
-import { chooseCapture, createPlatformReadback } from '@/lib/voice';
+import {
+  chooseCapture,
+  createHostedReadback,
+  createPlatformReadback,
+  createPortalHostedReadbackEgress,
+  createPortalHostedSynthesiser,
+} from '@/lib/voice';
 import type { BrowserMedia, CapturePort, ReadbackPort, RealtimeMint } from '@/lib/voice';
 
 export interface AssistantScreenProps {
@@ -202,15 +208,21 @@ function Conversation({
   const suggested =
     about !== null && helpTopicGranted(capabilities, about) ? t(helpQuestionKey(about)) : '';
 
-  /* Built once. A new port every render would resubscribe to the device's voice
-     list on every keystroke, and the effect that speaks would take a new
-     dependency each time and read the last answer again. `undefined` means
-     nobody injected one, which is the browser's own voice or nothing; `null`
-     means a caller said there is none, and is not the same answer. */
-  const port = useMemo(
-    () => (readback === undefined ? createPlatformReadback() : readback),
-    [readback]
-  );
+  /* Built once. Priority order for the readback port:
+     1. Explicitly injected port (for tests)
+     2. Hosted voice (when deployment configured one)
+     3. Platform voice (browser's built-in speech synthesis)
+     `undefined` means nobody injected one; `null` means a caller said there is none. */
+  const port = useMemo(() => {
+    if (readback !== undefined) return readback;
+    const hostedEgress = createPortalHostedReadbackEgress();
+    const hostedSynthesiser = createPortalHostedSynthesiser();
+    if (hostedEgress && hostedSynthesiser) {
+      return createHostedReadback(hostedSynthesiser, hostedEgress);
+    }
+    return createPlatformReadback();
+  }, [readback]);
+
   /* The rule runs here, beside the rule about what this portal will show. What
      reaches the voice is a turn id and the string on screen. */
   const speakable = useMemo(() => speakableTurns(state.turns, speakableAnswer), [state.turns]);

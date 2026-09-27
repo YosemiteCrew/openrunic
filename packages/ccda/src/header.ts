@@ -54,7 +54,7 @@ export function headerElements(document: CcdDocument): XmlElement[] {
       codeSystem: CODE_SYSTEMS.CONFIDENTIALITY.oid,
     }),
     element('languageCode', { code: document.patient.languageCode ?? 'en-US' }),
-    recordTarget(document.patient),
+    recordTarget(document.patient, document.custodian.id),
     authorElement(document.author, document.effectiveAt),
     custodian(document.custodian),
     ...(document.coveringPeriod === undefined ? [] : [documentationOf(document.coveringPeriod)]),
@@ -73,14 +73,14 @@ export function clinicalDocument(children: readonly XmlElement[]): XmlElement {
   );
 }
 
-function recordTarget(patient: DocumentPatient): XmlElement {
+function recordTarget(patient: DocumentPatient, mrnAuthority: string): XmlElement {
   const role: XmlElement[] = [
     // The practice's own identifier for the person, and the medical record
     // number beside it. Two ids rather than one: the UUID is what makes a
     // reconciliation deterministic, and the MRN is what a human at the other end
     // will actually search for.
     element('id', { root: patient.id }),
-    element('id', { root: '2.16.840.1.113883.4.1', extension: patient.mrn }),
+    element('id', { root: mrnAuthority, extension: patient.mrn }),
   ];
 
   const address = addressElement(patient.address);

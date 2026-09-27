@@ -7,11 +7,15 @@ the format a chart travels in when it leaves this practice for another one, or a
 | --------- | ------------------------------------ |
 | generate  | `generateCcd(document): string`      |
 | import    | `parseCcd(xml): CcdDocument`         |
+| preview   | `previewCcd(xml): CcdPreview`        |
 | inspect   | `parseDocumentTree(xml): XmlElement` |
 
 It reads and writes strings. It opens no sockets, touches no database and reads no clock, so every
 behaviour in it is reproducible from a fixture. Fetching the chart belongs to the API; storing what
 an import produced belongs to reconciliation, which is a decision a person makes.
+
+`previewCcd` adds deterministic section and entry accounting, source offsets, and unidentified-code
+details without writing records.
 
 ## Nine sections
 

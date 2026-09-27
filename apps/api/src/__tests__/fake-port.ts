@@ -6,8 +6,10 @@ import type {
 } from '../repositories/db-port.js';
 import { isTenantScopedModel } from '@openrunic/database';
 
+import type { CompartmentRule } from '../repositories/collection.js';
 import type { MemoryDataset } from '../repositories/memory.js';
 import type { ModelRecord, PrismaModelName } from '../repositories/rows.js';
+import { COLLECTION_SPECS } from '../repositories/specs/index.js';
 
 /**
  * A fake {@link DbPort} that really evaluates the queries it is given.
@@ -177,21 +179,48 @@ function matchesCondition(actual: unknown, condition: unknown): boolean {
   return checks.every(Boolean);
 }
 
-export function matchesWhere(row: Row, where: unknown): boolean {
+/**
+ * Resolves a to-one relation filter (`{ relation: { is: ... } }`) to the parent
+ * row it names, or `undefined` for a field that is not a known relation.
+ */
+export type RelationResolver = (row: Row, relation: string) => { parent: Row | null } | undefined;
+
+export function matchesWhere(row: Row, where: unknown, relations?: RelationResolver): boolean {
   if (!isRecord(where)) return true;
 
   return Object.entries(where).every(([key, condition]) => {
     if (key === 'AND') {
       const clauses = Array.isArray(condition) ? condition : [condition];
-      return clauses.every((clause) => matchesWhere(row, clause));
+      return clauses.every((clause) => matchesWhere(row, clause, relations));
     }
     if (key === 'OR') {
       const clauses = Array.isArray(condition) ? condition : [condition];
-      return clauses.some((clause) => matchesWhere(row, clause));
+      return clauses.some((clause) => matchesWhere(row, clause, relations));
     }
-    if (key === 'NOT') return !matchesWhere(row, condition);
+    if (key === 'NOT') return !matchesWhere(row, condition, relations);
+    const related = relations?.(row, key);
+    if (related !== undefined) {
+      if (!isRecord(condition) || !('is' in condition)) {
+        throw new Error(`fakePort: unsupported relation filter ${JSON.stringify(condition)}`);
+      }
+      return related.parent !== null && matchesWhere(related.parent, condition.is, relations);
+    }
     return matchesCondition(row[key], condition);
   });
+}
+
+/**
+ * The relations the specs filter through, read off their compartment rules so
+ * a new `through` rule is followed here without a second list to keep in step.
+ */
+function relationsOf(model: PrismaModelName): Map<string, { model: PrismaModelName; key: string }> {
+  const found = new Map<string, { model: PrismaModelName; key: string }>();
+  for (const spec of Object.values(COLLECTION_SPECS)) {
+    const rule = spec.compartment as CompartmentRule<PrismaModelName>;
+    if (spec.model !== model || typeof rule !== 'object' || !('through' in rule)) continue;
+    found.set(rule.through.relation, { model: rule.through.model, key: rule.through.key });
+  }
+  return found;
 }
 
 function compareRows(left: Row, right: Row, orderBy: unknown): number {
@@ -241,8 +270,21 @@ export function createFakePort(options: FakePortOptions): FakePort {
   const scopedWhere = (model: PrismaModelName, where: unknown): unknown =>
     isTenantScopedModel(model) ? { AND: [where ?? {}, { tenantId }] } : (where ?? {});
 
+  // A relation is followed inside the tenant, as the tenant extension narrows
+  // every model a nested filter reaches.
+  const resolverFor =
+    (model: PrismaModelName): RelationResolver =>
+    (row, relation) => {
+      const target = relationsOf(model).get(relation);
+      if (target === undefined) return undefined;
+      const parent = table(target.model).find(
+        (candidate) => candidate.id === row[target.key] && candidate.tenantId === tenantId
+      );
+      return { parent: parent ?? null };
+    };
+
   const select = (model: PrismaModelName, where: unknown): Row[] =>
-    table(model).filter((row) => matchesWhere(row, scopedWhere(model, where)));
+    table(model).filter((row) => matchesWhere(row, scopedWhere(model, where), resolverFor(model)));
 
   const delegateFor = <M extends PrismaModelName>(model: M): ModelDelegate<M> => {
     const record = (operation: string, args: unknown): void => {

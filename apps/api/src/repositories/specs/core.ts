@@ -464,16 +464,19 @@ export const telehealthVisitSpec: CollectionSpec<
   action: 'appointment',
   // No patient column: a visit points at an appointment, which is where the
   // chart is, and duplicating the patient here would give one visit two answers
-  // to whose it is, drifting the first time an appointment moved. Closed rather
-  // than open, as the second of two layers. The first is the route:
-  // `telehealthRoutes` is staff-only, because a patient reaches their own visit
-  // by the passwordless link they are sent and never manages a room. This is the
-  // structural backstop, so a telehealth route added without that guard still
-  // does not hand a compartment-bound caller every tenant's visit. It is safe
-  // now precisely because the guard runs first: `assertStaff` refuses a confined
-  // caller before the open-room preflight reads this table, so closing it here
-  // can no longer blind that duplicate-room check.
-  compartment: 'closed',
+  // to whose it is, drifting the first time an appointment moved. So the
+  // compartment follows the appointment instead: a patient-scoped token reads
+  // the visit for its own appointment and no other. That read is what the
+  // portal needs to offer a join; managing a room stays staff work, which
+  // `telehealthRoutes` enforces with `assertStaff` before it reads this table.
+  compartment: {
+    through: {
+      relation: 'appointment',
+      model: 'Appointment',
+      key: 'appointmentId',
+      column: 'patientId',
+    },
+  },
 
   newRow(input: TelehealthVisitCreateInput): Writable<'TelehealthVisit'> {
     return {

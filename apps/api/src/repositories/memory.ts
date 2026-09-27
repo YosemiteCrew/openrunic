@@ -174,6 +174,14 @@ export function createMemoryCollection<
     if (!ownChart && narrowFacility && !inFacility(row)) return false;
     if (compartment === undefined || spec.compartment === 'open') return true;
     if (spec.compartment === 'closed') return false;
+    if ('through' in spec.compartment) {
+      const { model, key, column } = spec.compartment.through;
+      const parentId = readColumn(row, key);
+      const parent = dataset
+        .table(model)
+        .find((candidate) => candidate.tenantId === tenantId && candidate.id === parentId);
+      return parent !== undefined && readColumn(parent, column) === compartment;
+    }
     return readColumn(row, spec.compartment.column) === compartment;
   };
 

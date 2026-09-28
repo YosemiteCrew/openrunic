@@ -23,7 +23,7 @@ import { createEmptyDataset, type MemoryDataset } from '../repositories/memory.j
 import { createPrismaCollection, createPrismaRepositoryRegistry } from '../repositories/prisma.js';
 import type { PrismaModelName, ScopedRow } from '../repositories/rows.js';
 import type { RequestScope } from '../repositories/registry.js';
-import { appointmentSpec, patientSpec } from '../repositories/specs/core.js';
+import { appointmentSpec, patientSpec, telehealthVisitSpec } from '../repositories/specs/core.js';
 
 import { createFakePort, matchesWhere, type FakePort } from './fake-port.js';
 import {
@@ -440,6 +440,29 @@ describe('the patient compartment', () => {
     expect(page.rows.map((row) => row.id).sort()).toEqual([testId(10), testId(11)]);
     await expect(collection.findById(testId(11))).resolves.not.toBeNull();
     await expect(collection.findById(testId(12))).resolves.toBeNull();
+  });
+
+  it('narrows a telehealth visit through its parent appointment', async () => {
+    const h = harness(testId(1));
+    const collection = createPrismaCollection(telehealthVisitSpec, h.port, h.scope);
+
+    await collection.list({
+      appointmentId: testId(10),
+      status: 'OPEN',
+      page: 1,
+      pageSize: 1,
+      sort: 'scheduledStart',
+      order: 'asc',
+    });
+
+    expect(callArgs(h.port, 'TelehealthVisit', 'findMany')).toMatchObject({
+      where: {
+        AND: [
+          { appointmentId: testId(10), status: 'OPEN' },
+          { appointment: { is: { patientId: { equals: testId(1) } } } },
+        ],
+      },
+    });
   });
 
   it('refuses a collection that reaches a chart only through a join', async () => {

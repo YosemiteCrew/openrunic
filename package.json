@@ -53,18 +53,18 @@
     "roadmap:check": "node scripts/roadmap/build.mjs --check"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.2.1",
-    "@commitlint/config-conventional": "^21.2.0",
-    "@secretlint/secretlint-rule-no-dotenv": "^13.0.4",
-    "@secretlint/secretlint-rule-preset-recommend": "^13.0.4",
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
+    "@secretlint/secretlint-rule-no-dotenv": "^13.0.5",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.5",
     "husky": "^9.1.7",
-    "lint-staged": "^17.3.0",
-    "prettier": "^3.9.6",
-    "react-doctor": "^0.9.11",
-    "secretlint": "^13.0.4",
-    "stylelint": "^17.14.1",
+    "lint-staged": "^17.5.1",
+    "prettier": "^3.9.8",
+    "react-doctor": "^0.9.14",
+    "secretlint": "^13.0.5",
+    "stylelint": "^17.15.0",
     "stylelint-config-standard": "^40.0.0",
-    "turbo": "^2.10.9",
+    "turbo": "^2.11.3",
     "typescript": "^5.9.3"
   }
 }

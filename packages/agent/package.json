@@ -31,19 +31,19 @@
     "conform": "node dist/conform/cli.js"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.0",
-    "@ai-sdk/openai-compatible": "^3.0.0",
+    "@ai-sdk/anthropic": "^4.0.60",
+    "@ai-sdk/openai-compatible": "^3.0.53",
     "@openrunic/agent-tools": "workspace:*",
-    "ai": "^7.0.0",
-    "zod": "^4.4.3"
+    "ai": "^7.0.111",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@types/node": "^22.20.1",
+    "@types/node": "^22.20.4",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.39.5",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.66.0",
+    "typescript-eslint": "^8.70.1",
     "vitest": "^4.1.11"
   }
 }

@@ -14,7 +14,7 @@
     "test": "vitest run --coverage"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.0",
+    "@hono/node-server": "^2.1.1",
     "@openrunic/adapters": "workspace:*",
     "@openrunic/agent": "workspace:*",
     "@openrunic/agent-tools": "workspace:*",
@@ -30,17 +30,17 @@
     "@openrunic/inventory": "workspace:*",
     "@openrunic/quality": "workspace:*",
     "@openrunic/terminology": "workspace:*",
-    "hono": "^4.13.5",
-    "zod": "^4.4.3"
+    "hono": "^4.13.8",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@types/node": "^22.20.1",
+    "@types/node": "^22.20.4",
     "@vitest/coverage-istanbul": "^4.1.11",
     "eslint": "^9.39.5",
-    "tsx": "^4.23.11",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.66.0",
+    "typescript-eslint": "^8.70.1",
     "vitest": "^4.1.11"
   }
 }

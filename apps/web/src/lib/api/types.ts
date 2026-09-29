@@ -718,6 +718,25 @@ export interface TaskCompleteBody {
   outcome?: string;
 }
 
+/** Mirrors `messageDtoSchema` in the orders API. */
+export interface MessageDto {
+  id: string;
+  threadId: string;
+  patientId: string | null;
+  senderType: 'USER' | 'PATIENT' | 'RELATED_PERSON' | 'SYSTEM';
+  senderUserId: string | null;
+  senderPatientId: string | null;
+  body: string;
+  sentAt: string;
+  readAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MessagePostBody {
+  body: string;
+}
+
 /* -------------------------------------------------------------------------- */
 /* The revenue cycle                                                           */
 /* -------------------------------------------------------------------------- */
@@ -1152,11 +1171,22 @@ export interface ApiClient {
       query?: ResultObservationListQuery,
       signal?: AbortSignal
     ) => Promise<ListResponse<ResultObservationDto>>;
-    review: (id: string, signal?: AbortSignal) => Promise<DiagnosticReportDto>;
+    review: (
+      id: string,
+      body?: { note?: string },
+      signal?: AbortSignal
+    ) => Promise<DiagnosticReportDto>;
   };
   tasks: {
     list: (query?: TaskListQuery, signal?: AbortSignal) => Promise<ListResponse<TaskDto>>;
     complete: (id: string, body?: TaskCompleteBody, signal?: AbortSignal) => Promise<TaskDto>;
+  };
+  messages: {
+    postMessage: (
+      threadId: string,
+      body: MessagePostBody,
+      signal?: AbortSignal
+    ) => Promise<MessageDto>;
   };
   claims: {
     scrub: (id: string, body?: ClaimTransitionBody, signal?: AbortSignal) => Promise<ClaimDto>;

@@ -1231,12 +1231,15 @@ describe('results', () => {
 
   it('signs off a result once and refuses a second sign-off', async () => {
     const { app } = seededApp();
-    const reviewed = await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, { body: {} });
+    const reviewed = await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, {
+      body: { note: 'Discussed with the patient.' },
+    });
 
     expect(reviewed.status).toBe(200);
     const dto = await body<DiagnosticReportDto>(reviewed);
     expect(dto.reviewedById).toBe(CLINICIAN);
     expect(dto.reviewedAt).toMatch(/T.*Z$/);
+    expect(dto.narrative).toBe('Discussed with the patient.');
 
     const again = await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, { body: {} });
     expect(again.status).toBe(409);

@@ -1,7 +1,7 @@
 'use client';
 
 import { formatCount } from '@openrunic/i18n';
-import { Button, Card, Select } from '@openrunic/ui';
+import { Button, Card, Modal, Select, Textarea } from '@openrunic/ui';
 import type { SelectOption } from '@openrunic/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
@@ -68,6 +68,154 @@ function synonyms(list: string): string[] {
 interface Completion {
   item: InboxItem;
   label: string;
+}
+
+interface ReplyState {
+  item: InboxItem;
+  body: string;
+}
+
+interface ReplyModalProps {
+  state: ReplyState;
+  title: string;
+  description: string;
+  label: string;
+  placeholder: string;
+  sendLabel: string;
+  cancelLabel: string;
+  pending: boolean;
+  onBodyChange: (body: string) => void;
+  onCancel: () => void;
+  onSend: () => void;
+}
+
+function ReplyModal({
+  state,
+  title,
+  description,
+  label,
+  placeholder,
+  sendLabel,
+  cancelLabel,
+  pending,
+  onBodyChange,
+  onCancel,
+  onSend,
+}: Readonly<ReplyModalProps>): ReactElement {
+  return (
+    <Modal
+      open
+      title={title}
+      description={description}
+      onClose={onCancel}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={state.body.trim().length === 0 || pending}
+            onClick={onSend}
+          >
+            {sendLabel}
+          </Button>
+        </>
+      }
+    >
+      <Textarea
+        label={label}
+        value={state.body}
+        onChange={(event) => onBodyChange(event.target.value)}
+        placeholder={placeholder}
+        rows={4}
+        autoFocus
+      />
+    </Modal>
+  );
+}
+
+interface CompletionToastProps {
+  completion: Completion;
+  busy: boolean;
+  undoLabel: string;
+  onUndo?: () => void;
+  onClose: () => void;
+}
+
+function CompletionToast({
+  completion,
+  busy,
+  undoLabel,
+  onUndo,
+  onClose,
+}: Readonly<CompletionToastProps>): ReactElement {
+  return (
+    <div className="or-toast-dock">
+      <Toast
+        tone="success"
+        title={completion.label}
+        message={completion.item.summary}
+        action={
+          onUndo ? (
+            <Button variant="ghost" size="sm" disabled={busy} onClick={onUndo}>
+              {undoLabel}
+            </Button>
+          ) : undefined
+        }
+        onClose={onClose}
+      />
+    </div>
+  );
+}
+
+interface InboxRailProps {
+  t: ReturnType<typeof useTranslator>;
+  visibleCount: number;
+  oldestOverdueAt: string | null;
+  overdueCount: number;
+  windowed: number | null;
+  total: number | null;
+  refused: number;
+  now: string;
+}
+
+function InboxRail({
+  t,
+  visibleCount,
+  oldestOverdueAt,
+  overdueCount,
+  windowed,
+  total,
+  refused,
+  now,
+}: Readonly<InboxRailProps>): ReactElement {
+  return (
+    <Card
+      tone="cream"
+      overline={t('inbox.rail.overline')}
+      title={counted(t, OPEN_ITEMS, visibleCount)}
+    >
+      <p className="or-small">
+        {oldestOverdueAt !== null
+          ? counted(t, OVERDUE_SUMMARY, overdueCount, {
+              oldest: slaLabel(t, oldestOverdueAt, now, 'inline'),
+            })
+          : t('inbox.rail.nothingOverdue')}
+      </p>
+      {windowed !== null && total !== null && windowed < total ? (
+        <p className="or-caption">
+          {counted(t, INBOX_WINDOW, windowed, { total: formatCount(total, t.locale) })}
+        </p>
+      ) : null}
+      {refused > 0 ? (
+        <p className="or-caption">
+          <strong>{counted(t, NOT_SHOWN, refused)}</strong>
+        </p>
+      ) : null}
+      <p className="or-small or-muted">{t('inbox.rail.auditNote')}</p>
+    </Card>
+  );
 }
 
 export interface InboxScreenProps {
@@ -182,7 +330,7 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
      module-level one, since a disposition names its actor from the credential
      and does not wait for `/bff/v0/me`. */
   const writer = client ?? worklist;
-  const { claim: recordClaim, reopen: recordReopen } = writer.inbox;
+  const { claim: recordClaim, reopen: recordReopen, reply: recordReply } = writer.inbox;
   /* A row whose disposition was refused, so the toast can say it is still open. */
   const [refusal, setRefusal] = useState<InboxItem | null>(null);
   const [stream, setStream] = useState<InboxStream | null>(null);
@@ -190,6 +338,7 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
   const [doneIds, setDoneIds] = useState<string[]>([]);
   const [claimedIds, setClaimedIds] = useState<string[]>([]);
   const [completion, setCompletion] = useState<Completion | null>(null);
+  const [reply, setReply] = useState<ReplyState | null>(null);
 
   const inbox = useInbox(assignment ? { assignedTo: assignment } : {}, { client });
 
@@ -225,6 +374,10 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
   const completing = useMutation((item: InboxItem) => writer.inbox.complete(item));
   const complete = useCallback(
     async (item: InboxItem) => {
+      if (item.stream === 'MESSAGES' && recordReply !== null) {
+        setReply({ item, body: '' });
+        return;
+      }
       const outcome = await completing.run(item);
       if (!outcome.ok) {
         setCompletion(null);
@@ -235,8 +388,27 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
       setDoneIds((previous) => [...previous, item.id]);
       setCompletion({ item, label: t(INBOX_STREAM_DONE_KEYS[item.stream]) });
     },
-    [t, completing]
+    [t, completing, recordReply]
   );
+
+  const replying = useMutation(({ item, body }: ReplyState) => {
+    if (recordReply === null) return Promise.reject(new Error('Message replies are unavailable.'));
+    return recordReply(item, body);
+  });
+  const sendReply = useCallback(async () => {
+    if (reply === null) return;
+    const outcome = await replying.run(reply);
+    if (!outcome.ok) {
+      setReply(null);
+      setCompletion(null);
+      setRefusal(reply.item);
+      return;
+    }
+    setDoneIds((previous) => [...previous, reply.item.id]);
+    setCompletion({ item: reply.item, label: t(INBOX_STREAM_DONE_KEYS.MESSAGES) });
+    setReply(null);
+    setRefusal(null);
+  }, [reply, replying, t]);
 
   /* One undo for both dispositions: whichever list the row landed in, this puts
      it back exactly where it was. Reversible acts get an undo, not a dialog -
@@ -286,7 +458,7 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
     [t, claiming]
   );
 
-  const busy = completing.pending || claiming.pending || reopening.pending;
+  const busy = completing.pending || claiming.pending || reopening.pending || replying.pending;
 
   const commands = useInboxCommands(setStream, setAssignment);
 
@@ -334,30 +506,16 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
         />
       }
       rightRail={
-        <Card
-          tone="cream"
-          overline={t('inbox.rail.overline')}
-          title={counted(t, OPEN_ITEMS, visible.length)}
-        >
-          <p className="or-small">
-            {oldestOverdueAt !== null
-              ? counted(t, OVERDUE_SUMMARY, overdue.length, {
-                  oldest: slaLabel(t, oldestOverdueAt, now, 'inline'),
-                })
-              : t('inbox.rail.nothingOverdue')}
-          </p>
-          {windowed !== null && page !== null && windowed < page.total ? (
-            <p className="or-caption">
-              {counted(t, INBOX_WINDOW, windowed, { total: formatCount(page.total, t.locale) })}
-            </p>
-          ) : null}
-          {refused > 0 ? (
-            <p className="or-caption">
-              <strong>{counted(t, NOT_SHOWN, refused)}</strong>
-            </p>
-          ) : null}
-          <p className="or-small or-muted">{t('inbox.rail.auditNote')}</p>
-        </Card>
+        <InboxRail
+          t={t}
+          visibleCount={visible.length}
+          oldestOverdueAt={oldestOverdueAt}
+          overdueCount={overdue.length}
+          windowed={windowed}
+          total={page?.total ?? null}
+          refused={refused}
+          now={now}
+        />
       }
     >
       <ScreenCommands commands={commands} />
@@ -407,26 +565,29 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
       </Card>
 
       {completion ? (
-        <div className="or-toast-dock">
-          <Toast
-            tone="success"
-            title={completion.label}
-            message={completion.item.summary}
-            action={
-              recordReopen === null ? undefined : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void undo(recordReopen)}
-                >
-                  {t('inbox.list.undo')}
-                </Button>
-              )
-            }
-            onClose={() => setCompletion(null)}
-          />
-        </div>
+        <CompletionToast
+          completion={completion}
+          busy={busy}
+          undoLabel={t('inbox.list.undo')}
+          onUndo={recordReopen === null ? undefined : () => void undo(recordReopen)}
+          onClose={() => setCompletion(null)}
+        />
+      ) : null}
+
+      {reply ? (
+        <ReplyModal
+          state={reply}
+          title={t('inbox.reply.title', { patient: reply.item.summary })}
+          description={t('inbox.reply.description')}
+          label={t('inbox.reply.label')}
+          placeholder={t('inbox.reply.placeholder')}
+          sendLabel={t('inbox.reply.send')}
+          cancelLabel={t('inbox.reply.cancel')}
+          pending={replying.pending}
+          onBodyChange={(body) => setReply({ ...reply, body })}
+          onCancel={() => setReply(null)}
+          onSend={() => void sendReply()}
+        />
       ) : null}
 
       {refusal ? (

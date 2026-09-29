@@ -104,6 +104,15 @@ export const emptyBodySchema = z.strictObject({});
 
 export type EmptyBody = z.infer<typeof emptyBodySchema>;
 
+/**
+ * The body for reviewing a result report with an optional note.
+ */
+export const resultReviewSchema = z.strictObject({
+  note: z.string().max(5000).optional(),
+});
+
+export type ResultReviewBody = z.infer<typeof resultReviewSchema>;
+
 /* -------------------------------------------------------------------- orders */
 
 export const serviceRequestListQuerySchema = z.strictObject({
@@ -774,6 +783,10 @@ export const taskListQuerySchema = z.strictObject({
   /** `true` is the work still in flight: open, in progress or on hold. */
   open: booleanFlag,
   slaState: z.enum(TASK_SLA_STATES).optional(),
+  /** Model name of the thing the task is about, e.g. "DiagnosticReport". */
+  subjectType: z.string().optional(),
+  /** The id of the subject entity. */
+  subjectId: z.uuid().optional(),
   sort: z.enum(['dueAt', 'priority', 'createdAt']).default('dueAt'),
   order: sortOrderField,
 });
@@ -796,6 +809,8 @@ export function toTaskListQuery(input: TaskListQueryInput): TaskListQuery {
     ...(input.inboxFor === undefined ? {} : { inboxFor: input.inboxFor }),
     ...(open === undefined ? {} : { statusIn: open ? OPEN_TASK_STATUSES : CLOSED_TASK_STATUSES }),
     ...(input.slaState === undefined ? {} : { slaState: input.slaState }),
+    ...(input.subjectType === undefined ? {} : { subjectType: input.subjectType }),
+    ...(input.subjectId === undefined ? {} : { subjectId: input.subjectId }),
     sort: input.sort,
     order: input.order,
   };

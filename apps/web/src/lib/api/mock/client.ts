@@ -1447,5 +1447,24 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
           );
         }),
     },
+    messages: {
+      postMessage: (threadId, body) =>
+        answer(() => {
+          const now = clock.now();
+          return {
+            id: `0192f1a0-0000-7000-8000-00000000m${String(Date.now()).slice(-6)}`,
+            threadId,
+            patientId: null,
+            senderType: 'USER' as const,
+            senderUserId: MOCK_ACTING_USER,
+            senderPatientId: null,
+            body: body.body,
+            sentAt: now,
+            readAt: null,
+            createdAt: now,
+            updatedAt: now,
+          };
+        }),
+    },
   };
 }

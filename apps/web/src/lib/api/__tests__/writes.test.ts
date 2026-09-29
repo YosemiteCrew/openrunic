@@ -107,6 +107,7 @@ describe('the live client, every write it makes', () => {
     await client.orders.cancel('s-1');
     await client.results.review('r-1');
     await client.tasks.complete('t-1', { outcome: 'Called the patient' });
+    await client.messages.postMessage('thread-1', { body: 'We received your message.' });
     await client.claims.scrub('c-1');
     await client.claims.submit('c-1');
     await client.claims.status('c-1', { status: 'PAID', source: 'REMIT_835' });
@@ -126,6 +127,7 @@ describe('the live client, every write it makes', () => {
       '/orders/s-1/cancel',
       '/results/r-1/review',
       '/tasks/t-1/complete',
+      '/messages/threads/thread-1/messages',
       '/claims/c-1/scrub',
       '/claims/c-1/submit',
       '/claims/c-1/status',

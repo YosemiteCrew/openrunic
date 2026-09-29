@@ -720,9 +720,8 @@ describe('liveResults', () => {
     expect(page.unlisted).toBe(2);
   });
 
-  /* The sign-off is the API's record, not the screen's: who signed comes from
-     the credential and when from the server's clock, and the screen's own "now"
-     is not what the pane then states. */
+  /* The sign-off is the API's record: who signed comes from the credential and
+     when from the server's clock. The note is the caller's contribution. */
   it('signs through the review route and answers the sign-off it recorded', async () => {
     const review = vi.fn((id: string) =>
       Promise.resolve(dto({ id, reviewedAt: '2026-02-03T10:00:00.000Z', reviewedById: 'user-9' }))
@@ -733,12 +732,16 @@ describe('liveResults', () => {
 
     const signature = await liveResults(client, null).sign(
       report,
-      null,
+      'Discussed with the patient.',
       '2026-01-01T00:00:00.000Z'
     );
 
-    expect(review).toHaveBeenCalledWith('report-1');
-    expect(signature).toEqual({ at: '2026-02-03T10:00:00.000Z', by: 'user-9', note: null });
+    expect(review).toHaveBeenCalledWith('report-1', { note: 'Discussed with the patient.' });
+    expect(signature).toEqual({
+      at: '2026-02-03T10:00:00.000Z',
+      by: 'user-9',
+      note: 'Discussed with the patient.',
+    });
   });
 
   it('falls back to the screen instant only when the answer carries no time', async () => {
@@ -768,9 +771,7 @@ describe('liveResults', () => {
     ).rejects.toThrow('already reviewed');
   });
 
-  /* The review records who and when and nothing typed, so a note offered here
-     would be dropped on the way to the API. */
-  it('offers no note on a sign-off', () => {
-    expect(liveResults(stub([]).client, null).notes).toBe(false);
+  it('offers a note on a sign-off', () => {
+    expect(liveResults(stub([]).client, null).notes).toBe(true);
   });
 });

@@ -107,4 +107,12 @@ export const inbox: Messages = {
 
   /* ------------------------------------------------------- the browser tab */
   'inbox.page.title': 'Bandeja de entrada',
+
+  /* ------------------------------------------------------------ the reply */
+  'inbox.reply.title': 'Responder a {patient}',
+  'inbox.reply.description': 'Su respuesta se enviará al paciente a través del portal.',
+  'inbox.reply.label': 'Mensaje',
+  'inbox.reply.placeholder': 'Escriba su respuesta…',
+  'inbox.reply.send': 'Enviar respuesta',
+  'inbox.reply.cancel': 'Cancelar',
 };

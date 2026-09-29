@@ -1300,6 +1300,46 @@ describe('results', () => {
     expect(task?.completedAt).toBeNull();
   });
 
+  it('completes every open RESULT task for the report, past the first page', async () => {
+    const { app, dataset } = seededApp();
+    const statuses = ['OPEN', 'IN_PROGRESS', 'ON_HOLD'] as const;
+    // Two and a half pages of open work on this report, so the last page is a
+    // partial one and the walk has to go past the first two.
+    const openIds = Array.from({ length: 250 }, (_, i) => testId(5000 + i));
+    seed(
+      dataset,
+      'Task',
+      ...openIds.map((id, i) => makeTaskRow({ id, status: statuses[i % statuses.length] }))
+    );
+    const untouched = [
+      makeTaskRow({ id: testId(4990), subjectId: REPORT_B }),
+      makeTaskRow({ id: testId(4991), type: 'MESSAGE' }),
+      makeTaskRow({ id: testId(4992), status: 'CANCELLED' }),
+    ];
+    seed(dataset, 'Task', ...untouched);
+    const before = new Map(untouched.map((row) => [row.id, { ...row }]));
+
+    const res = await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, { body: {} });
+    expect(res.status).toBe(200);
+
+    const tasks = dataset.table('Task');
+    // The premise: the report really does carry more than one page of tasks
+    // (the seeded one plus these), all of them now finished.
+    const finished = tasks.filter((t) => t.id === TASK_A || openIds.includes(t.id));
+    expect(finished).toHaveLength(251);
+    for (const task of finished) {
+      expect(task).toMatchObject({
+        status: 'DONE',
+        completedById: CLINICIAN,
+        outcome: 'Reviewed and signed off',
+      });
+      expect(task.completedAt).not.toBeNull();
+    }
+    for (const [id, row] of before) {
+      expect(tasks.find((t) => t.id === id)).toEqual(row);
+    }
+  });
+
   it('refuses a sign-off from a service account holding the permission', async () => {
     const { app, dataset } = serviceApp();
     seed(dataset, 'DiagnosticReport', makeReportRow());

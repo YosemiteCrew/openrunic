@@ -18,11 +18,13 @@ import type { RouteContract } from '../openapi/registry.js';
 
 import { referralRouteContracts, referralRoutes } from './referrals.js';
 import type { Permission } from '../policy/permissions.js';
+import { listAll } from '../repositories/collection.js';
 import type {
   DocumentStatus,
   MessageSenderType,
   ServiceRequestStatus,
   SpecimenStatus,
+  TaskListQuery,
   TaskStatus,
 } from '../repositories/specs/orders.js';
 import {
@@ -605,10 +607,10 @@ function transitionRoutes(): Hono<AppEnv> {
 
     // Finish every open RESULT task for this report, whoever holds it: the
     // team pool and a colleague's queue should not keep a signed-off result.
+    // Every page of them, not the first: a report can carry more open tasks
+    // than one page holds, and each one left behind stays in somebody's queue.
     const tasks = repos.tasks;
-    const taskPage = await tasks.list({
-      page: 1,
-      pageSize: 100,
+    const open = await listAll((q: TaskListQuery) => tasks.list(q), {
       type: 'RESULT',
       subjectType: 'DiagnosticReport',
       subjectId: id,
@@ -617,7 +619,7 @@ function transitionRoutes(): Hono<AppEnv> {
       order: 'asc',
     });
     const completedAt = new Date();
-    for (const task of taskPage.rows) {
+    for (const task of open) {
       await tasks.update(task.id, {
         status: 'DONE',
         completedAt,

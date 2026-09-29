@@ -127,9 +127,13 @@ jobs:
           # a bad response cannot overwrite real figures with zeroes. An empty
           # window and a quiet day look the same downstream, so the payload shape
           # is checked here, where a failure can still be reported.
+          #
+          # GitHub puts the daily entries under a key named after the endpoint
+          # (`clones` or `views`); the script reads them as `days`, so the
+          # response is reshaped as it is fetched.
           fetch_window() {
             local endpoint="$1" payload
-            if ! payload="$(gh api "repos/${REPO}/traffic/${endpoint}")"; then
+            if ! payload="$(gh api "repos/${REPO}/traffic/${endpoint}" --jq "{days: .${endpoint}}")"; then
               echo "::error::GET repos/${REPO}/traffic/${endpoint} failed. These endpoints need Administration: read, which GITHUB_TOKEN cannot be granted - set the TRAFFIC_READ_TOKEN secret to a fine-grained token that holds it." >&2
               return 1
             fi

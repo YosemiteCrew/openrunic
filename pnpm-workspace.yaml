@@ -56,7 +56,10 @@ overrides:
   # It arrives through ajv 8, which pins 3.1.5, so it is a build- and
   # validation-time dependency rather than a request-path one here; the bump is
   # a patch within the same minor. Re-check when ajv updates its pin.
-  fast-uri: 3.1.6
+  # GHSA-qw65-cvwx-89v3 / GHSA-58mr-gqgx-xq4g: fast-uri < 3.1.7 lets a crafted
+  # port or unclosed bracket confuse the serialised authority; 3.1.8 is the
+  # current patch of the same line.
+  fast-uri: 3.1.8
 
 # pnpm 10 blocks dependency postinstall scripts by default. Only these may run.
 onlyBuiltDependencies:

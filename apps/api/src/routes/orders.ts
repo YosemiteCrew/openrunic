@@ -52,6 +52,7 @@ import {
   messageThreadPatchSchema,
   resultObservationDtoSchema,
   resultObservationListQuerySchema,
+  resultReviewSchema,
   serviceRequestDtoSchema,
   serviceRequestListQuerySchema,
   serviceRequestPatchSchema,
@@ -583,7 +584,7 @@ function transitionRoutes(): Hono<AppEnv> {
 
   router.post('/results/:id/review', requirePermission('result.write'), async (c) => {
     const id = pathId(c.req.param('id'));
-    await parseTransitionBody(c, emptyBodySchema);
+    const body = await parseTransitionBody(c, resultReviewSchema);
     const reviewedById = actingUserId(c);
     const repos = repositories(c);
     const reports = repos.reports;
@@ -594,7 +595,11 @@ function transitionRoutes(): Hono<AppEnv> {
       throw ApiError.conflict('That result has already been reviewed.');
     }
     const row = required(
-      await reports.update(id, { reviewedAt: new Date(), reviewedById }),
+      await reports.update(id, {
+        reviewedAt: new Date(),
+        reviewedById,
+        ...(body.note ? { narrative: body.note } : {}),
+      }),
       NO_REPORT
     );
 

@@ -137,4 +137,12 @@ export const inbox: Messages = {
    * strip is often all a tired person has to tell nine open screens apart.
    */
   'inbox.page.title': 'Inbox',
+
+  /* ------------------------------------------------------------ the reply */
+  'inbox.reply.title': 'Reply to {patient}',
+  'inbox.reply.description': 'Your reply will be sent to the patient via the portal.',
+  'inbox.reply.label': 'Message',
+  'inbox.reply.placeholder': 'Type your reply…',
+  'inbox.reply.send': 'Send reply',
+  'inbox.reply.cancel': 'Cancel',
 };

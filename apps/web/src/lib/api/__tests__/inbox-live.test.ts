@@ -65,6 +65,8 @@ describe('toInboxItem', () => {
       assignedTo: 'ME',
       unread: null,
       href: null,
+      subjectType: 'MedicationRequest',
+      subjectId: 'rx-1',
     });
   });
 
@@ -204,9 +206,7 @@ describe('liveInbox', () => {
  * medication-statement filter above it carries a note about.
  */
 /**
- * What the live inbox can record. One disposition only - closing a general
- * task - because every other stream's verb changes something other than the
- * task, and closing the task alone would tell the reader it had been done.
+ * What the live inbox can record through the action routes it owns.
  */
 describe('liveInbox writes', () => {
   function item(type: TaskKind) {
@@ -217,8 +217,8 @@ describe('liveInbox writes', () => {
 
   it.each([
     ['GENERAL', true],
-    ['REFILL', false],
-    ['COSIGN', false],
+    ['REFILL', true],
+    ['COSIGN', true],
     ['MESSAGE', false],
     ['RESULT', false],
   ] as const)('records the disposition of a %s task: %s', (type, expected) => {
@@ -240,6 +240,47 @@ describe('liveInbox writes', () => {
     const inbox = liveInbox({ tasks: { complete } } as unknown as ApiClient, ME);
 
     await expect(inbox.complete(item('GENERAL'))).rejects.toThrow('already done');
+  });
+
+  it('reviews the linked report instead of only closing its task', async () => {
+    const review = vi.fn().mockResolvedValue({ reviewedAt: '2026-02-01T12:00:00.000Z' });
+    const complete = vi.fn();
+    const inbox = liveInbox(
+      { results: { review }, tasks: { complete } } as unknown as ApiClient,
+      ME
+    );
+    const result = toInboxItem(
+      dto({ type: 'RESULT', subjectType: 'DiagnosticReport', subjectId: 'report-1' }),
+      ME
+    );
+    if (!result) throw new Error('RESULT did not map');
+
+    await inbox.complete(result);
+
+    expect(review).toHaveBeenCalledWith('report-1');
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('posts a message before closing its task', async () => {
+    const postMessage = vi.fn().mockResolvedValue({ id: 'message-1' });
+    const complete = vi.fn().mockResolvedValue(dto({ status: 'DONE' }));
+    const inbox = liveInbox(
+      { messages: { postMessage }, tasks: { complete } } as unknown as ApiClient,
+      ME
+    );
+    const message = toInboxItem(
+      dto({ type: 'MESSAGE', subjectType: 'MessageThread', subjectId: 'thread-1' }),
+      ME
+    );
+    if (!message) throw new Error('MESSAGE did not map');
+
+    await inbox.reply?.(message, 'The refill is ready.');
+
+    expect(postMessage).toHaveBeenCalledWith('thread-1', { body: 'The refill is ready.' });
+    expect(complete).toHaveBeenCalledWith('task-1');
+    expect(postMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      complete.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER
+    );
   });
 
   /* No route claims a pooled task or reopens a finished one, so neither is a

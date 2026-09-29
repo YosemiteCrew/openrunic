@@ -327,6 +327,23 @@ describe('InboxScreen, recording a disposition', () => {
     return { ...base, inbox: { ...base.inbox, ...inbox } };
   }
 
+  it('sends a message reply before removing its row', async () => {
+    const reply = vi.fn(() => Promise.resolve());
+    render(<InboxScreen client={withInbox({ reply })} now={MOCK_NOW} />);
+    await screen.findByRole('list', { name: 'Inbox items' });
+
+    fireEvent.click(at(within(list()).getAllByRole('button', { name: 'Reply' })));
+    fireEvent.change(screen.getByLabelText('Message'), {
+      target: { value: 'Your refill is ready.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send reply' }));
+
+    await waitFor(() =>
+      expect(reply).toHaveBeenCalledWith(expect.anything(), 'Your refill is ready.')
+    );
+    expect(await screen.findByText('Reply sent')).toBeInTheDocument();
+  });
+
   it('offers no button for a disposition the client cannot record', async () => {
     const client = withInbox({ completes: (item) => item.stream === 'TASKS' });
     render(<InboxScreen client={client} now={MOCK_NOW} />);

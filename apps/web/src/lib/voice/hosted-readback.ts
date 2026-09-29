@@ -67,12 +67,17 @@ export function createWebHostedSynthesiser(): HostedSynthesiser | null {
     play: ({ text, language }, handlers) => {
       const controller = new AbortController();
       let audio: HTMLAudioElement | null = null;
+      let objectUrl: string | null = null;
 
       const cleanup = () => {
         if (audio) {
           audio.pause();
           audio.src = '';
           audio = null;
+        }
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
         }
       };
 
@@ -101,22 +106,23 @@ export function createWebHostedSynthesiser(): HostedSynthesiser | null {
         })
         .then((blob) => {
           if (controller.signal.aborted) return;
-          const url = URL.createObjectURL(blob);
-          audio = new Audio(url);
+          objectUrl = URL.createObjectURL(blob);
+          audio = new Audio(objectUrl);
           audio.onended = () => {
-            URL.revokeObjectURL(url);
             cleanup();
             handlers.finished();
           };
           audio.onerror = () => {
-            URL.revokeObjectURL(url);
             cleanup();
             handlers.failed();
           };
           audio
             .play()
             .then(() => handlers.started())
-            .catch(() => handlers.failed());
+            .catch(() => {
+              cleanup();
+              handlers.failed();
+            });
         })
         .catch(() => {
           if (controller.signal.aborted) return;

@@ -227,6 +227,7 @@ describe('createWebHostedSynthesiser', () => {
       blob: () => Promise.resolve(new Blob(['audio data'], { type: 'audio/mpeg' })),
     });
     const pause = vi.fn();
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL');
     globalThis.Audio = class {
       play = vi.fn().mockResolvedValue(undefined);
       pause = pause;
@@ -248,5 +249,6 @@ describe('createWebHostedSynthesiser', () => {
     playback.stop();
 
     expect(pause).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledOnce();
   });
 });

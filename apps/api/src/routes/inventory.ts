@@ -39,7 +39,7 @@ import {
 import { causeText, dispensedQuantity } from '../inventory/posting.js';
 import { assertFacilityAccess, assertPermission, requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
-import type { BaseQuery, Page } from '../repositories/collection.js';
+import { listAll } from '../repositories/collection.js';
 import type {
   StockItemListQuery,
   StockLotCreateInput,
@@ -223,48 +223,18 @@ async function resolveChart(
 const NO_LOT = 'No such stock lot.';
 const NO_FACILITY = 'No such facility.';
 
-/**
- * How many rows a snapshot fetches per round trip.
- *
- * Not a cap: {@link collect} keeps going until it holds the whole result set. It
- * is the batch size, and it is deliberately smaller than a busy lot's ledger so
- * that the second iteration is a path the suite exercises rather than a path
- * production discovers.
- */
-const SNAPSHOT_PAGE = 100;
-
-/**
- * Every row a query matches, paged to exhaustion.
- *
- * The assertion re-attaches the paging fields to the caller's query. Expressing
- * "this query, plus a page" in the type would mean being generic over a query
- * minus two of its own keys, which buys nothing the two call sites do not
- * already prove.
- */
-async function collect<TRow, TQuery extends BaseQuery>(
-  list: (query: TQuery) => Promise<Page<TRow>>,
-  query: Omit<TQuery, 'page' | 'pageSize'>
-): Promise<TRow[]> {
-  const rows: TRow[] = [];
-  for (let page = 1; ; page += 1) {
-    const result = await list({ ...query, page, pageSize: SNAPSHOT_PAGE } as TQuery);
-    rows.push(...result.rows);
-    if (rows.length >= result.total) return rows;
-  }
-}
-
 function allLots(
   c: Context<AppEnv>,
   query: Omit<StockLotListQuery, 'page' | 'pageSize'>
 ): Promise<LotRow[]> {
-  return collect((q: StockLotListQuery) => repositories(c).stockLots.list(q), query);
+  return listAll((q: StockLotListQuery) => repositories(c).stockLots.list(q), query);
 }
 
 function allMovements(
   c: Context<AppEnv>,
   query: Omit<StockMovementListQuery, 'page' | 'pageSize'>
 ): Promise<MovementRow[]> {
-  return collect((q: StockMovementListQuery) => repositories(c).stockMovements.list(q), query);
+  return listAll((q: StockMovementListQuery) => repositories(c).stockMovements.list(q), query);
 }
 
 /**
@@ -285,7 +255,7 @@ async function statusHistoryByLot(
   const byLot = new Map<string, ScopedRow<'StockLotStatusChange'>[]>();
   if (lotIds.length === 0) return byLot;
 
-  const rows = await collect(
+  const rows = await listAll(
     (q: StockLotStatusChangeListQuery) => repositories(c).stockLotStatusChanges.list(q),
     { lotIds, sort: 'effectiveOn' as const, order: 'asc' as const }
   );
@@ -419,7 +389,7 @@ async function writeAct(
 ): Promise<StockPostingDto> {
   const { stockPostings, stockMovements } = repositories(c);
   const posting = await stockPostings.create(input);
-  const lines = await collect((q: StockMovementListQuery) => stockMovements.list(q), {
+  const lines = await listAll((q: StockMovementListQuery) => stockMovements.list(q), {
     postingId: posting.id,
     sort: 'occurredOn' as const,
     order: 'asc' as const,
@@ -763,7 +733,7 @@ export function inventoryRoutes(): Hono<AppEnv> {
 
     const asOf = await resolveAsOf(c, query.facilityId, query.asOf);
     const { lots, movements } = await snapshot(c, { facilityId: query.facilityId });
-    const items = await collect((q: StockItemListQuery) => repositories(c).stockItems.list(q), {
+    const items = await listAll((q: StockItemListQuery) => repositories(c).stockItems.list(q), {
       active: true,
       sort: 'name' as const,
       order: 'asc' as const,

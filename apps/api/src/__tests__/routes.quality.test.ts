@@ -2,6 +2,7 @@ import { openrunicCodeSystem } from '@openrunic/fhir';
 import { MEASURE_VALUE_SETS } from '@openrunic/quality';
 import { describe, expect, it } from 'vitest';
 
+import type { RepositoryRegistry } from '../repositories/types.js';
 import type { MeasureReportDto, MeasureSummaryDto } from '../schemas/quality.js';
 
 import {
@@ -369,6 +370,92 @@ describe('computing a measure', () => {
     const body = (await (await report(app)).json()) as MeasureReportDto;
 
     expect(body.denominator).toBe(1);
+  });
+
+  /**
+   * A value set may draw on more than one code system, and a code system may
+   * serve more than one value set. Seven of CMS165's eight sets share one
+   * system here, so it is read once rather than seven times, and a set that
+   * spans two systems still takes its members from both.
+   */
+  it("reads each code system once, and takes a set's members from every system it names", async () => {
+    const SECOND = 'http://example.invalid/second-codes';
+    const read: string[] = [];
+    const { app, dataset } = createTestApp({
+      decorateRepositories: (registry: RepositoryRegistry): RepositoryRegistry => ({
+        forRequest: (scope) => {
+          const real = registry.forRequest(scope);
+          const target = real.terminology;
+          return {
+            ...real,
+            terminology: {
+              ...target,
+              list: async (query: Parameters<typeof target.list>[0]) => {
+                if (query.system !== undefined) read.push(query.system);
+                return target.list(query);
+              },
+            },
+          };
+        },
+      }),
+    });
+    seedCodes(dataset);
+    seed(dataset, 'TerminologyCode', {
+      ...storageColumns(testId(698)),
+      system: SECOND,
+      code: 'HTN-2',
+      display: 'Hypertension',
+      version: '',
+      parentCode: null,
+      isActive: true,
+      properties: null,
+    });
+    // Diagnosed only under the second system, so the denominator depends on it.
+    seedChart(dataset, { systolic: 128, diastolic: 78, hypertensive: false });
+    seed(dataset, 'Condition', {
+      ...storageColumns(testId(302)),
+      patientId: PATIENT,
+      encounterId: null,
+      category: 'PROBLEM_LIST_ITEM',
+      code: 'HTN-2',
+      codeSystem: SECOND,
+      display: 'Hypertension',
+      snomedCode: null,
+      clinicalStatus: 'ACTIVE',
+      verificationStatus: 'CONFIRMED',
+      onsetDate: new Date('2020-01-01T00:00:00.000Z'),
+      abatementDate: null,
+      severityCode: null,
+      bodySiteCode: null,
+      note: null,
+      recordedAt: new Date('2020-01-01T00:00:00.000Z'),
+      recordedById: null,
+    });
+    const [hypertension, ...rest] = CMS165_SETS;
+    const url = hypertension[0];
+    const loaded = await app.request('/bff/v0/value-sets', {
+      method: 'POST',
+      headers: jsonBearer(TOKENS.adminA),
+      body: JSON.stringify({
+        url,
+        definition: {
+          url,
+          include: [
+            { system: SYSTEM, codes: ['HTN'] },
+            { system: SECOND, codes: ['HTN-2'] },
+          ],
+        },
+      }),
+    });
+    expect(loaded.status).toBe(201);
+    await loadValueSets(app, rest);
+    read.length = 0;
+
+    const res = await report(app);
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as MeasureReportDto).denominator).toBe(1);
+    expect(read).toEqual([SYSTEM, SECOND, APPOINTMENT_SYSTEM]);
   });
 
   it('answers 404 for a measure this build does not carry', async () => {

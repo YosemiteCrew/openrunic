@@ -33,7 +33,7 @@ import type {
   RemittanceStatus,
   StatementStatus,
 } from '../repositories/specs/financial.js';
-import type { Page } from '../repositories/collection.js';
+import { mapInBatches, type Page } from '../repositories/collection.js';
 import type { Repositories } from '../repositories/types.js';
 import {
   chargeDtoSchema,
@@ -873,11 +873,10 @@ function transitionRoutes(options: FinancialRouteOptions): Hono<AppEnv> {
     assertTransition(REMITTANCE_TRANSITIONS, 'remittance', before.status, 'POSTED');
 
     const lines = (await allRemittanceLines(c, repos, id)).rows;
-    const allocations: PaymentAllocationInput[] = [];
-    for (const line of lines) {
-      const allocation = await allocationForLine(repos, line);
-      if (allocation !== null) allocations.push(allocation);
-    }
+    // Each line's claim is looked up on its own; the allocations keep line order.
+    const allocations = (
+      await mapInBatches(lines, (line) => allocationForLine(repos, line))
+    ).filter((allocation): allocation is PaymentAllocationInput => allocation !== null);
     const allocatedCents = allocations.reduce((total, entry) => total + entry.amountCents, 0);
 
     const actor = actorId(c);

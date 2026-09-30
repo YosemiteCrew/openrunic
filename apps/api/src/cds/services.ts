@@ -17,6 +17,7 @@ import type { Context } from 'hono';
 
 import type { AppEnv } from '../context.js';
 import type { Permission } from '../policy/permissions.js';
+import { mapInBatches } from '../repositories/collection.js';
 import { repositories } from '../routes/helpers.js';
 
 /**
@@ -233,27 +234,25 @@ async function screenDrafts(c: Context<AppEnv>, request: CdsRequest): Promise<Ca
     activeMedications(c, patientId),
   ]);
 
-  const cards: Card[] = [];
-  for (const medication of medications) {
-    const result = await safetyPort.screen({ medication, allergies, currentMedications: current });
+  // Each draft is screened on its own; the cards keep the order of the drafts.
+  const results = await mapInBatches(medications, (medication) =>
+    Promise.resolve(safetyPort.screen({ medication, allergies, currentMedications: current }))
+  );
 
-    for (const finding of result.findings) {
-      cards.push(
-        card({
-          summary: finding.message,
-          detail: `${finding.message}${checkedLine(safetyPort)}`,
-          // `acknowledge` is what the screener uses for a finding a prescriber
-          // must actively pass; anything else informs. The indicator is a
-          // promise, and spending `critical` on a shared drug class is how a
-          // system teaches people to dismiss it.
-          indicator: finding.action === 'acknowledge' ? 'critical' : 'info',
-          source: SOURCE,
-        })
-      );
-    }
-  }
-
-  return cards;
+  return results.flatMap((result) =>
+    result.findings.map((finding) =>
+      card({
+        summary: finding.message,
+        detail: `${finding.message}${checkedLine(safetyPort)}`,
+        // `acknowledge` is what the screener uses for a finding a prescriber
+        // must actively pass; anything else informs. The indicator is a
+        // promise, and spending `critical` on a shared drug class is how a
+        // system teaches people to dismiss it.
+        indicator: finding.action === 'acknowledge' ? 'critical' : 'info',
+        source: SOURCE,
+      })
+    )
+  );
 }
 
 const ORDER_PREFETCH = {

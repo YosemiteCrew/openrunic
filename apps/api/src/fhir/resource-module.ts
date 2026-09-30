@@ -6,7 +6,7 @@ import { ApiError } from '../errors.js';
 import { assertCareRelationship } from '../middleware/policy.js';
 import { chartIdOf } from '../policy/chart.js';
 import type { Permission } from '../policy/permissions.js';
-import type { BaseQuery, Page } from '../repositories/collection.js';
+import { inSequence, type BaseQuery, type Page } from '../repositories/collection.js';
 import { COLLECTION_SPECS } from '../repositories/specs/index.js';
 import type { CollectionKey, Repositories } from '../repositories/types.js';
 
@@ -396,11 +396,16 @@ export function defineFhirResource<
         options?.authorizedExport !== true &&
         (!isPatientResource || addressesOneChart(params));
       if (gateThisSearch) {
-        for (const chartId of new Set(
-          page.rows.map((row) => chartOf(descriptor.chartFrom, row)).filter(isPresent)
-        )) {
-          await assertCareRelationship(c, chartId);
-        }
+        // One chart at a time, so the first refusal ends the search before any
+        // later chart is checked or recorded as accessed.
+        await inSequence(
+          [
+            ...new Set(
+              page.rows.map((row) => chartOf(descriptor.chartFrom, row)).filter(isPresent)
+            ),
+          ],
+          (chartId) => assertCareRelationship(c, chartId)
+        );
       }
       // `toResource` may be synchronous for most resources and asynchronous
       // for the ones that resolve a child list, so the map is wrapped rather

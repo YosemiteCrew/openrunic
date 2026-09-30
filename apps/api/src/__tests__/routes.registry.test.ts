@@ -341,6 +341,23 @@ describe('acknowledging, which is the only thing that records a report', () => {
 
     expect(body.reported).toEqual([DOSE]);
   });
+
+  it('stamps every dose in a batch and reports them in the order they were sent', async () => {
+    const { app, dataset } = harness();
+    const later = testId(303);
+    const earlier = testId(301);
+    seedDose(dataset, { ...storageColumns(later) });
+    seedDose(dataset, { ...storageColumns(earlier) });
+    const sent = [later, testId(999), DOSE, earlier];
+    expect((await pending(app)).total).toBe(3);
+
+    const body = (await (await acknowledge(app, accepted(), sent)).json()) as {
+      reported: string[];
+    };
+
+    expect(body.reported).toEqual([later, DOSE, earlier]);
+    expect((await pending(app)).total).toBe(0);
+  });
 });
 
 describe('the audit trail', () => {

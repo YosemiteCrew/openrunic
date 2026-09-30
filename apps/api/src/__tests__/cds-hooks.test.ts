@@ -538,6 +538,36 @@ describe('screening the draft orders', () => {
     expect(body.cards.some((entry) => entry.summary.includes('Amoxicillin'))).toBe(true);
   });
 
+  it('keeps the cards in the order of the drafts they are about', async () => {
+    const { app, dataset } = harness();
+    seedAllergy(dataset);
+    const drafts = ['Amoxicillin 500mg', 'Metformin 500mg', 'Penicillin V Potassium', 'Ampicillin'];
+
+    const res = await app.request('/cds-services/order-sign-safety', {
+      method: 'POST',
+      headers: jsonBearer(TOKENS.clinicianA),
+      body: invocation({
+        context: {
+          userId: 'Practitioner/1',
+          patientId: PATIENT,
+          draftOrders: {
+            entry: drafts.map((text) => ({
+              resource: { resourceType: 'MedicationRequest', medicationCodeableConcept: { text } },
+            })),
+          },
+        },
+      }),
+    });
+    const body = (await res.json()) as CardBody;
+
+    expect(res.status).toBe(200);
+    expect(body.cards.map((entry) => drafts.find((text) => entry.summary.includes(text)))).toEqual([
+      'Amoxicillin 500mg',
+      'Penicillin V Potassium',
+      'Ampicillin',
+    ]);
+  });
+
   it('names the source on every card, so a clinician knows what is advising them', async () => {
     const { app, dataset } = harness();
     seedAllergy(dataset);

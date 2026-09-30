@@ -165,30 +165,27 @@ export function createDemoPrincipalResolver(client: PrismaClient): PrincipalReso
    * identity provider and no demo data.
    */
   const load = async (): Promise<Map<string, Principal>> => {
-    const organisation = await withTenantSession(
-      client,
-      { tenantId: demoOrganisationId() },
-      async (tx) =>
-        tx.organisation.findFirst({
-          where: { slug: DEMO_ORGANISATION_SLUG },
-          select: {
-            id: true,
-            facilities: { select: { id: true } },
-            users: {
-              where: { email: { in: DEMO_TOKENS.map((spec) => spec.email) } },
-              // The User model stores the parts, not a composed label: there is
-              // no displayName column, because a person's name is not one
-              // string.
-              select: {
-                id: true,
-                email: true,
-                givenName: true,
-                familyName: true,
-                credential: true,
-              },
+    const organisation = await withTenantSession(client, { tenantId: demoOrganisationId() }, (tx) =>
+      tx.organisation.findFirst({
+        where: { slug: DEMO_ORGANISATION_SLUG },
+        select: {
+          id: true,
+          facilities: { select: { id: true } },
+          users: {
+            where: { email: { in: DEMO_TOKENS.map((spec) => spec.email) } },
+            // The User model stores the parts, not a composed label: there is
+            // no displayName column, because a person's name is not one
+            // string.
+            select: {
+              id: true,
+              email: true,
+              givenName: true,
+              familyName: true,
+              credential: true,
             },
           },
-        })
+        },
+      })
     );
 
     const resolved = new Map<string, Principal>();

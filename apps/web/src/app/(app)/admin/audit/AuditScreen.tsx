@@ -14,7 +14,6 @@ import {
   DetailList,
   Drawer,
   FilterBar,
-  pluralKey,
   translateColumns,
 } from '@/components/admin';
 import type { Translator } from '@openrunic/i18n';
@@ -36,6 +35,8 @@ import type { CsvColumn } from '@/lib/csv';
 import { calendarDay, clockTime, formatDateTime } from '@/lib/format';
 import { searchWords } from '@/lib/i18n/counted';
 import { useTranslator } from '@/lib/i18n/messages';
+
+import { filterSummary } from './filterSummary';
 
 /**
  * AD-06 Audit viewer.
@@ -118,37 +119,6 @@ function csvColumns(t: Translator): Array<CsvColumn<AuditEvent>> {
     { header: t('admin.audit.csv.sourceAddress'), value: (event) => event.sourceIp },
     { header: t('admin.audit.csv.hash'), value: (event) => event.hash },
   ];
-}
-
-const EVENT_COUNT = {
-  oneKey: 'admin.audit.summary.one',
-  otherKey: 'admin.audit.summary.other',
-};
-
-const EVENT_COUNT_BREAKGLASS = {
-  oneKey: 'admin.audit.summaryBreakglass.one',
-  otherKey: 'admin.audit.summaryBreakglass.other',
-};
-
-/**
- * The line under the filter bar: "42 events, 3 breakglass".
- *
- * Breakglass is only named when there is some, so the ordinary case reads as
- * one plain count rather than a count plus a reassuring zero. Two whole
- * messages rather than one with a clause appended, because the clause is not
- * appendable in every language.
- */
-export function filterSummary(t: Translator, total: number, breakglassCount: number) {
-  // The locale comes off the translator rather than beside it. This took both
-  // because the local `Translate` type it used to be given had dropped the
-  // locale, so the caller passed `t.locale` back in as a second argument.
-  if (breakglassCount === 0) {
-    return t(pluralKey(EVENT_COUNT, total, t.locale), { count: formatCount(total, t.locale) });
-  }
-  return t(pluralKey(EVENT_COUNT_BREAKGLASS, total, t.locale), {
-    count: formatCount(total, t.locale),
-    breakglass: formatCount(breakglassCount, t.locale),
-  });
 }
 
 /** The patient cell: an audit event does not always have a chart context. */
@@ -282,6 +252,63 @@ function AuditEventDetail({ event }: Readonly<{ event: AuditEvent }>): ReactElem
   );
 }
 
+interface AuditFilters {
+  actorId: string;
+  action: AuditAction | '';
+  purposeOfUse: PurposeOfUse | '';
+  patientMrn: string;
+  breakglassOnly: boolean;
+  from: string;
+  to: string;
+}
+
+/** The filter bar's state as a query: an empty control means "any", not "the empty value". */
+function auditQuery(filters: AuditFilters) {
+  return {
+    actorId: filters.actorId || undefined,
+    action: filters.action || undefined,
+    purposeOfUse: filters.purposeOfUse || undefined,
+    patientMrn: filters.patientMrn || undefined,
+    breakglassOnly: filters.breakglassOnly || undefined,
+    from: filters.from || undefined,
+    to: filters.to || undefined,
+  };
+}
+
+/** The drawer that shows one event, open whenever an event is selected. */
+function AuditEventDrawer({
+  event,
+  onClose,
+}: Readonly<{ event: AuditEvent | null; onClose: () => void }>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <Drawer
+      open={event !== null}
+      title={event ? t(AUDIT_ACTION_LABELS[event.action].labelKey) : ''}
+      description={event ? formatDateTime(t, event.occurredAt, 'prose') : undefined}
+      width={720}
+      onClose={onClose}
+      meta={
+        event ? (
+          <span className="or-cell-chips">
+            <Tag mono>#{event.sequence}</Tag>
+            {event.breakglass ? <Badge tone="danger">{t('admin.audit.breakglass')}</Badge> : null}
+            <Badge tone="success">{t('admin.audit.chip.readOnly')}</Badge>
+          </span>
+        ) : null
+      }
+      footer={
+        <Button variant="ghost" onClick={onClose}>
+          {t('admin.action.close')}
+        </Button>
+      }
+    >
+      {event ? <AuditEventDetail event={event} /> : null}
+    </Drawer>
+  );
+}
+
 export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElement {
   const t = useTranslator();
   const options = useAdminClientOption(client);
@@ -298,15 +325,7 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
   const [toast, setToast] = useState<string | null>(null);
 
   const events = useAuditEvents(
-    {
-      actorId: actorId || undefined,
-      action: action || undefined,
-      purposeOfUse: purposeOfUse || undefined,
-      patientMrn: patientMrn || undefined,
-      breakglassOnly: breakglassOnly || undefined,
-      from: from || undefined,
-      to: to || undefined,
-    },
+    auditQuery({ actorId, action, purposeOfUse, patientMrn, breakglassOnly, from, to }),
     options
   );
 
@@ -488,31 +507,7 @@ export function AuditScreen({ client }: Readonly<AuditScreenProps>): ReactElemen
         )}
       </AsyncBoundary>
 
-      <Drawer
-        open={selected !== null}
-        title={selected ? t(AUDIT_ACTION_LABELS[selected.action].labelKey) : ''}
-        description={selected ? formatDateTime(t, selected.occurredAt, 'prose') : undefined}
-        width={720}
-        onClose={() => setOpenId(null)}
-        meta={
-          selected ? (
-            <span className="or-cell-chips">
-              <Tag mono>#{selected.sequence}</Tag>
-              {selected.breakglass ? (
-                <Badge tone="danger">{t('admin.audit.breakglass')}</Badge>
-              ) : null}
-              <Badge tone="success">{t('admin.audit.chip.readOnly')}</Badge>
-            </span>
-          ) : null
-        }
-        footer={
-          <Button variant="ghost" onClick={() => setOpenId(null)}>
-            {t('admin.action.close')}
-          </Button>
-        }
-      >
-        {selected ? <AuditEventDetail event={selected} /> : null}
-      </Drawer>
+      <AuditEventDrawer event={selected} onClose={() => setOpenId(null)} />
 
       {toast ? (
         <div className="or-toast-region">

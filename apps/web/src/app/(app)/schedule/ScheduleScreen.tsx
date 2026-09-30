@@ -106,6 +106,37 @@ function bookingBlockedReason(
 }
 
 /**
+ * What the day's read holds, with a stable empty for each part the first render
+ * does not have yet.
+ */
+function dayContents(data: ReturnType<typeof useClinicDay>['data']) {
+  return {
+    appointments: data?.appointments ?? NO_APPOINTMENTS,
+    patientsById: data?.patientsById ?? NO_PATIENTS,
+    facilities: data?.facilities ?? NO_FACILITIES,
+    providers: data?.providers ?? NO_PROVIDERS,
+    /* The facility the day is scoped to, resolved by the hook rather than by this
+       screen: the day shown and the day booked into have to be the same one. */
+    facility: data?.facility ?? null,
+  };
+}
+
+/* Where the day is happening, named in the heading rather than only in the
+   top bar, because it is the facility a booking made from this screen is
+   written against. Two whole sentences rather than one with a clause the code
+   glues in: the first render of this screen has no `state.data` yet, and a
+   language that puts the place somewhere else in the sentence cannot move a
+   fragment that arrived already assembled. */
+function dayDescription(t: Translator, day: string, facility: FacilityDto | null): string {
+  return facility
+    ? t('schedule.day.descriptionAtFacility', {
+        date: formatDate(t, day),
+        facility: facility.name,
+      })
+    : t('schedule.day.description', { date: formatDate(t, day) });
+}
+
+/**
  * Palette synonyms from one comma-separated message.
  *
  * They are per-language and not transliterations: somebody searching in Spanish
@@ -299,13 +330,10 @@ export function ScheduleScreen({ client, capture }: Readonly<ScheduleScreenProps
     providerId: providerId || undefined,
     client,
   });
-  const appointments = state.data?.appointments ?? NO_APPOINTMENTS;
-  const patientsById = state.data?.patientsById ?? NO_PATIENTS;
-  const facilities = state.data?.facilities ?? NO_FACILITIES;
-  const providers = state.data?.providers ?? NO_PROVIDERS;
-  /* The facility the day is scoped to, resolved by the hook rather than by this
-     screen: the day shown and the day booked into have to be the same one. */
-  const facility = state.data?.facility ?? null;
+  const { appointments, patientsById, facilities, providers, facility } = useMemo(
+    () => dayContents(state.data),
+    [state.data]
+  );
 
   const writes = client ?? api;
   const refetch = state.refetch;
@@ -471,18 +499,7 @@ export function ScheduleScreen({ client, capture }: Readonly<ScheduleScreenProps
     ? patientsById.get(confirming.patientId)
     : undefined;
 
-  /* Where the day is happening, named in the heading rather than only in the
-     top bar, because it is the facility a booking made from this screen is
-     written against. Two whole sentences rather than one with a clause the code
-     glues in: the first render of this screen has no `state.data` yet, and a
-     language that puts the place somewhere else in the sentence cannot move a
-     fragment that arrived already assembled. */
-  const description = facility
-    ? t('schedule.day.descriptionAtFacility', {
-        date: formatDate(t, day),
-        facility: facility.name,
-      })
-    : t('schedule.day.description', { date: formatDate(t, day) });
+  const description = dayDescription(t, day, facility);
   const captureProps = capture === undefined ? {} : { capture };
 
   return (

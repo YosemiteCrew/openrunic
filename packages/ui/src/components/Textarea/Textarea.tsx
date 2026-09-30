@@ -1,4 +1,4 @@
-import type { ChangeEvent, HTMLAttributes } from 'react';
+import type { ChangeEvent, HTMLAttributes, RefObject } from 'react';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { CircleAlert } from 'lucide-react';
 import { cx } from '../../lib/cx';
@@ -79,50 +79,14 @@ export function Textarea({
   const message = error ?? hint;
   const showCounter = maxLength !== undefined;
   const controlRef = useRef<HTMLTextAreaElement>(null);
+  const { count, handleChange } = useCharacterCount(value, defaultValue, onChange);
 
-  /* The typed length, which doubles as the auto-grow trigger: an uncontrolled field
-     re-renders on nothing else. A `value` the caller owns always wins over it. */
-  const [typedCount, setTypedCount] = useState(defaultValue?.length ?? 0);
-  const count = value?.length ?? typedCount;
-  const atLimit = maxLength !== undefined && count >= maxLength;
-
-  const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-    setTypedCount(event.target.value.length);
-    onChange?.(event);
-  };
-
-  /* Height is written straight onto the element rather than held in state: it is a
-     measurement of the DOM, and a layout effect lands it before the browser paints, so the
-     field never flashes at the wrong height. */
-  useLayoutEffect(() => {
-    const control = controlRef.current;
-    if (!autoGrow || !control) return;
-    /* Reset first: a shrinking value has to be measured against its natural height, not
-       against the taller one left behind by the previous keystroke. */
-    control.style.height = 'auto';
-    /* jsdom does no layout, so scrollHeight is 0 there. Leaving the height unset in that
-       case keeps `rows` in charge instead of collapsing the field to nothing. */
-    control.style.height = control.scrollHeight > 0 ? `${control.scrollHeight}px` : '';
-    /* Handing the height back on the way out is what lets `autoGrow` be turned off again:
-       without it the last measured height would stick as an inline override. */
-    return () => {
-      control.style.height = '';
-    };
-  }, [autoGrow, count, value]);
+  useAutoGrow(controlRef, autoGrow, count, value);
 
   const describedBy = cx(message && messageId, showCounter && counterId) || undefined;
 
   return (
-    <div
-      className={cx(
-        'or-textarea',
-        error && 'or-textarea--error',
-        disabled && 'or-textarea--disabled',
-        autoGrow && 'or-textarea--grow',
-        className
-      )}
-      style={style}
-    >
+    <div className={wrapperClassName(error, disabled, autoGrow, className)} style={style}>
       {label ? (
         <label className="or-textarea__label" htmlFor={fieldId}>
           {label}
@@ -148,30 +112,118 @@ export function Textarea({
           {...rest}
         />
       </span>
-      {message || showCounter ? (
-        <div className="or-textarea__footer">
-          {message ? (
-            <p className="or-textarea__message" id={messageId}>
-              {error ? (
-                <CircleAlert
-                  className="or-textarea__message-icon"
-                  size={MESSAGE_ICON_SIZE}
-                  strokeWidth={ICON_STROKE_WIDTH}
-                  aria-hidden="true"
-                />
-              ) : null}
-              {message}
-            </p>
+      <TextareaFooter
+        message={message}
+        messageId={messageId}
+        isError={Boolean(error)}
+        count={count}
+        maxLength={maxLength}
+        counterId={counterId}
+      />
+    </div>
+  );
+}
+
+function wrapperClassName(
+  error: string | undefined,
+  disabled: boolean,
+  autoGrow: boolean,
+  className: string | undefined
+): string {
+  return cx(
+    'or-textarea',
+    error && 'or-textarea--error',
+    disabled && 'or-textarea--disabled',
+    autoGrow && 'or-textarea--grow',
+    className
+  );
+}
+
+/* The typed length, which doubles as the auto-grow trigger: an uncontrolled field
+   re-renders on nothing else. A `value` the caller owns always wins over it. */
+function useCharacterCount(
+  value: string | undefined,
+  defaultValue: string | undefined,
+  onChange: TextareaProps['onChange']
+) {
+  const [typedCount, setTypedCount] = useState(defaultValue?.length ?? 0);
+  const count = value?.length ?? typedCount;
+
+  const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setTypedCount(event.target.value.length);
+    onChange?.(event);
+  };
+
+  return { count, handleChange };
+}
+
+/* Height is written straight onto the element rather than held in state: it is a
+   measurement of the DOM, and a layout effect lands it before the browser paints, so the
+   field never flashes at the wrong height. */
+function useAutoGrow(
+  controlRef: RefObject<HTMLTextAreaElement | null>,
+  autoGrow: boolean,
+  count: number,
+  value: string | undefined
+) {
+  useLayoutEffect(() => {
+    const control = controlRef.current;
+    if (!autoGrow || !control) return;
+    /* Reset first: a shrinking value has to be measured against its natural height, not
+       against the taller one left behind by the previous keystroke. */
+    control.style.height = 'auto';
+    /* jsdom does no layout, so scrollHeight is 0 there. Leaving the height unset in that
+       case keeps `rows` in charge instead of collapsing the field to nothing. */
+    control.style.height = control.scrollHeight > 0 ? `${control.scrollHeight}px` : '';
+    /* Handing the height back on the way out is what lets `autoGrow` be turned off again:
+       without it the last measured height would stick as an inline override. */
+    return () => {
+      control.style.height = '';
+    };
+  }, [controlRef, autoGrow, count, value]);
+}
+
+interface TextareaFooterProps {
+  message: string | undefined;
+  messageId: string;
+  isError: boolean;
+  count: number;
+  maxLength: number | undefined;
+  counterId: string;
+}
+
+function TextareaFooter({
+  message,
+  messageId,
+  isError,
+  count,
+  maxLength,
+  counterId,
+}: TextareaFooterProps) {
+  const showCounter = maxLength !== undefined;
+  if (!message && !showCounter) return null;
+  return (
+    <div className="or-textarea__footer">
+      {message ? (
+        <p className="or-textarea__message" id={messageId}>
+          {isError ? (
+            <CircleAlert
+              className="or-textarea__message-icon"
+              size={MESSAGE_ICON_SIZE}
+              strokeWidth={ICON_STROKE_WIDTH}
+              aria-hidden="true"
+            />
           ) : null}
-          {showCounter ? (
-            <p
-              className={cx('or-textarea__counter', atLimit && 'or-textarea__counter--near')}
-              id={counterId}
-            >
-              {count} / {maxLength}
-            </p>
-          ) : null}
-        </div>
+          {message}
+        </p>
+      ) : null}
+      {showCounter ? (
+        <p
+          className={cx('or-textarea__counter', count >= maxLength && 'or-textarea__counter--near')}
+          id={counterId}
+        >
+          {count} / {maxLength}
+        </p>
       ) : null}
     </div>
   );

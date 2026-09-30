@@ -2,7 +2,7 @@
 
 import { Badge, Button, Card, Modal } from '@openrunic/ui';
 import { useEffect, useMemo, useReducer, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 import { Toast } from '@/components/state';
 import { useRegisterCommands } from '@/components/command';
@@ -16,6 +16,7 @@ import type {
   SlashCommand,
 } from '@/lib/api/chart';
 import { useMutation } from '@/lib/api';
+import type { ApiError } from '@/lib/api';
 import { formatCredentialed, formatDate, formatDateTime } from '@/lib/format';
 import { useTranslator } from '@/lib/i18n/messages';
 
@@ -62,11 +63,7 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
   const [confirming, setConfirming] = useState<Confirming>(null);
   const [addendumText, setAddendumText] = useState('');
   const [writingAddendum, setWritingAddendum] = useState(false);
-  /* The rendered sentence rather than its key, because the toast is transient
-     interface state and holding a key here would put a lookup the drift test
-     cannot see between the action and the words. It is set from a literal key
-     at the moment the write comes back. */
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useTransientToast();
 
   const { sections, state, signature, addenda } = draft;
   const locked = isLocked(draft);
@@ -76,12 +73,6 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
     notes.sign(note.id, committed)
   );
   const amending = useMutation((text: string) => notes.addAddendum(note.id, text));
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 5000);
-    return () => clearTimeout(timer);
-  }, [toast]);
 
   const updateSection = (key: NoteSection['key'], text: string) => {
     dispatch({ type: 'edit', key, text });
@@ -111,19 +102,140 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
     setToast(t('encounter.toast.addendumSigned'));
   };
 
-  /* The palette entries depend on the reader as well as on the lock, so the
-     translator joins the dependency list: a list built once in English would
-     otherwise survive a language change intact.
+  useNoteCommands(locked, setWritingAddendum, setConfirming);
 
-     That dependency is only sound because the translator is memoised on the
-     locale. `useRegisterCommands` registers whenever this array's identity
-     changes and registering sets state, so a translator with a new identity
-     every render would make this a render loop rather than a wasted
-     allocation.
+  const closeConfirm = () => setConfirming(null);
 
-     Keywords are a comma-separated catalogue string split here, the way the
-     navigation table already does it: somebody searching in another language
-     does not type the English word. */
+  return (
+    <div className="or-note">
+      <NoteBanner
+        locked={locked}
+        state={state}
+        signature={signature}
+        providerName={note.providerName}
+        onAddAddendum={() => setWritingAddendum(true)}
+        onSign={() => setConfirming('sign')}
+      />
+
+      <div className="or-note__blocks">
+        {sections.map((section) => (
+          <NoteBlock
+            key={section.key}
+            section={section}
+            commands={commands}
+            locked={locked}
+            onChange={(text) => updateSection(section.key, text)}
+            onEmit={(item) => emit(section.key, item)}
+          />
+        ))}
+      </div>
+
+      {locked && signature ? (
+        <SignatureBlock signature={signature} addenda={addenda} />
+      ) : (
+        <p className="or-caption or-note__footnote">
+          {t('encounter.footnote.unsigned', {
+            date: formatDate(t, note.visitDate),
+            author: formatCredentialed(note.providerName, note.providerCredential),
+          })}
+        </p>
+      )}
+
+      {writingAddendum ? (
+        <AddendumCard
+          text={addendumText}
+          onTextChange={setAddendumText}
+          onDiscard={() => {
+            setWritingAddendum(false);
+            setAddendumText('');
+          }}
+          onSign={() => setConfirming('addendum')}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={confirming === 'sign'}
+        title={t('encounter.confirm.sign.title')}
+        description={t('encounter.confirm.sign.description')}
+        onClose={closeConfirm}
+        onConfirm={sign}
+        pending={signing.pending}
+        confirmLabel={t('encounter.action.signNote')}
+        error={signing.error}
+      >
+        {/* The sentence the signer is attesting to, rendered exactly as the
+            record will store it. Not a catalogue string: a clinician must read
+            the words that go into the note, not a translation of them. */}
+        <p className="or-body">{ATTESTATION}</p>
+        <p className="or-caption">
+          {t('encounter.confirm.sign.signingAs', {
+            signer: formatCredentialed(note.providerName, note.providerCredential),
+          })}
+        </p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={confirming === 'addendum'}
+        title={t('encounter.confirm.addendum.title')}
+        description={t('encounter.confirm.addendum.description')}
+        onClose={closeConfirm}
+        onConfirm={signAddendum}
+        pending={amending.pending}
+        confirmLabel={t('encounter.action.signAddendum')}
+        error={amending.error}
+      >
+        <p className="or-body">{addendumText}</p>
+      </ConfirmDialog>
+
+      {toast ? (
+        <div className="or-note__toast">
+          <Toast
+            tone="success"
+            title={toast}
+            message={t('encounter.toast.message')}
+            onClose={() => setToast(null)}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* The rendered sentence rather than its key, because the toast is transient
+   interface state and holding a key here would put a lookup the drift test
+   cannot see between the action and the words. It is set from a literal key
+   at the moment the write comes back, and clears itself after five seconds. */
+function useTransientToast() {
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  return [toast, setToast] as const;
+}
+
+/* The palette entries depend on the reader as well as on the lock, so the
+   translator joins the dependency list: a list built once in English would
+   otherwise survive a language change intact.
+
+   That dependency is only sound because the translator is memoised on the
+   locale. `useRegisterCommands` registers whenever this array's identity
+   changes and registering sets state, so a translator with a new identity
+   every render would make this a render loop rather than a wasted
+   allocation.
+
+   Keywords are a comma-separated catalogue string split here, the way the
+   navigation table already does it: somebody searching in another language
+   does not type the English word. */
+function useNoteCommands(
+  locked: boolean,
+  setWritingAddendum: (writing: boolean) => void,
+  setConfirming: (confirming: Confirming) => void
+) {
+  const t = useTranslator();
   useRegisterCommands(
     useMemo<Command[]>(() => {
       const keywords = (key: string) =>
@@ -154,182 +266,167 @@ export function NoteEditor({ note, commands, client }: Readonly<NoteEditorProps>
           perform: () => setConfirming('sign'),
         },
       ];
-    }, [locked, t])
+    }, [locked, t, setWritingAddendum, setConfirming])
   );
+}
 
-  return (
-    <div className="or-note">
-      {locked ? (
-        <Card className="or-note__banner or-note__banner--signed">
-          <div className="or-note__banner-row">
-            <Badge tone="success" icon="lock">
-              {t('encounter.banner.signedTitle')}
-            </Badge>
-            <p className="or-body">
-              {t('encounter.banner.signedDetail', {
-                signer: signature?.signerName ?? note.providerName,
-                when: formatDateTime(t, signature?.signedAt),
-              })}
-            </p>
-            <Button
-              variant="secondary"
-              iconLeft="file-plus"
-              onClick={() => setWritingAddendum(true)}
-            >
-              {t('encounter.action.addAddendum')}
-            </Button>
-          </div>
-        </Card>
-      ) : (
-        <Card className="or-note__banner or-note__banner--caution">
-          <div className="or-note__banner-row">
-            <Badge tone="neutral" icon="pen-line">
-              {state === 'DRAFT' ? t('encounter.banner.draft') : t('encounter.banner.unsigned')}
-            </Badge>
-            <p className="or-body">
-              {state === 'DRAFT'
-                ? t('encounter.banner.draftDetail')
-                : t('encounter.banner.unsignedDetail')}
-            </p>
-            <Button variant="primary" iconLeft="pen-line" onClick={() => setConfirming('sign')}>
-              {t('encounter.action.signNote')}
-            </Button>
-          </div>
-        </Card>
-      )}
+interface NoteBannerProps {
+  locked: boolean;
+  state: EncounterNote['state'];
+  signature: EncounterNote['signature'];
+  providerName: string;
+  onAddAddendum: () => void;
+  onSign: () => void;
+}
 
-      <div className="or-note__blocks">
-        {sections.map((section) => (
-          <NoteBlock
-            key={section.key}
-            section={section}
-            commands={commands}
-            locked={locked}
-            onChange={(text) => updateSection(section.key, text)}
-            onEmit={(item) => emit(section.key, item)}
-          />
-        ))}
-      </div>
-
-      {locked && signature ? (
-        <SignatureBlock signature={signature} addenda={addenda} />
-      ) : (
-        <p className="or-caption or-note__footnote">
-          {t('encounter.footnote.unsigned', {
-            date: formatDate(t, note.visitDate),
-            author: formatCredentialed(note.providerName, note.providerCredential),
-          })}
-        </p>
-      )}
-
-      {writingAddendum ? (
-        <Card title={t('encounter.addendum.title')} className="or-note__addendum">
-          <p className="or-caption" id="addendum-hint">
-            {t('encounter.addendum.hint')}
+/** Signed and locked, or still waiting on a signature: the note's state, said up top. */
+function NoteBanner({
+  locked,
+  state,
+  signature,
+  providerName,
+  onAddAddendum,
+  onSign,
+}: Readonly<NoteBannerProps>): ReactElement {
+  const t = useTranslator();
+  if (locked) {
+    return (
+      <Card className="or-note__banner or-note__banner--signed">
+        <div className="or-note__banner-row">
+          <Badge tone="success" icon="lock">
+            {t('encounter.banner.signedTitle')}
+          </Badge>
+          <p className="or-body">
+            {t('encounter.banner.signedDetail', {
+              signer: signature?.signerName ?? providerName,
+              when: formatDateTime(t, signature?.signedAt),
+            })}
           </p>
-          <label className="or-note__addendum-label" htmlFor="addendum-text">
-            {t('encounter.addendum.label')}
-          </label>
-          <textarea
-            id="addendum-text"
-            className="or-note-block__field"
-            aria-describedby="addendum-hint"
-            rows={4}
-            value={addendumText}
-            onChange={(event) => setAddendumText(event.target.value)}
-          />
-          <div className="or-note__addendum-actions">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setWritingAddendum(false);
-                setAddendumText('');
-              }}
-            >
-              {t('encounter.addendum.discard')}
-            </Button>
-            <Button
-              variant="primary"
-              iconLeft="pen-line"
-              disabled={addendumText.trim().length === 0}
-              onClick={() => setConfirming('addendum')}
-            >
-              {t('encounter.action.signAddendum')}
-            </Button>
-          </div>
-        </Card>
-      ) : null}
-
-      <Modal
-        open={confirming === 'sign'}
-        role="alertdialog"
-        title={t('encounter.confirm.sign.title')}
-        description={t('encounter.confirm.sign.description')}
-        onClose={() => setConfirming(null)}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirming(null)}>
-              {t('encounter.action.cancel')}
-            </Button>
-            <Button variant="primary" disabled={signing.pending} onClick={sign}>
-              {signing.pending ? t('encounter.action.signing') : t('encounter.action.signNote')}
-            </Button>
-          </>
-        }
-      >
-        {/* The sentence the signer is attesting to, rendered exactly as the
-            record will store it. Not a catalogue string: a clinician must read
-            the words that go into the note, not a translation of them. */}
-        <p className="or-body">{ATTESTATION}</p>
-        <p className="or-caption">
-          {t('encounter.confirm.sign.signingAs', {
-            signer: formatCredentialed(note.providerName, note.providerCredential),
-          })}
-        </p>
-        {signing.error ? (
-          <p className="or-body" role="alert">
-            {signing.error.problem?.detail ?? signing.error.message}
-          </p>
-        ) : null}
-      </Modal>
-
-      <Modal
-        open={confirming === 'addendum'}
-        role="alertdialog"
-        title={t('encounter.confirm.addendum.title')}
-        description={t('encounter.confirm.addendum.description')}
-        onClose={() => setConfirming(null)}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirming(null)}>
-              {t('encounter.action.cancel')}
-            </Button>
-            <Button variant="primary" disabled={amending.pending} onClick={signAddendum}>
-              {amending.pending
-                ? t('encounter.action.signing')
-                : t('encounter.action.signAddendum')}
-            </Button>
-          </>
-        }
-      >
-        <p className="or-body">{addendumText}</p>
-        {amending.error ? (
-          <p className="or-body" role="alert">
-            {amending.error.problem?.detail ?? amending.error.message}
-          </p>
-        ) : null}
-      </Modal>
-
-      {toast ? (
-        <div className="or-note__toast">
-          <Toast
-            tone="success"
-            title={toast}
-            message={t('encounter.toast.message')}
-            onClose={() => setToast(null)}
-          />
+          <Button variant="secondary" iconLeft="file-plus" onClick={onAddAddendum}>
+            {t('encounter.action.addAddendum')}
+          </Button>
         </div>
+      </Card>
+    );
+  }
+  const draft = state === 'DRAFT';
+  return (
+    <Card className="or-note__banner or-note__banner--caution">
+      <div className="or-note__banner-row">
+        <Badge tone="neutral" icon="pen-line">
+          {draft ? t('encounter.banner.draft') : t('encounter.banner.unsigned')}
+        </Badge>
+        <p className="or-body">
+          {draft ? t('encounter.banner.draftDetail') : t('encounter.banner.unsignedDetail')}
+        </p>
+        <Button variant="primary" iconLeft="pen-line" onClick={onSign}>
+          {t('encounter.action.signNote')}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+interface AddendumCardProps {
+  text: string;
+  onTextChange: (text: string) => void;
+  onDiscard: () => void;
+  onSign: () => void;
+}
+
+/** The addendum being written to a signed note, before it is confirmed. */
+function AddendumCard({
+  text,
+  onTextChange,
+  onDiscard,
+  onSign,
+}: Readonly<AddendumCardProps>): ReactElement {
+  const t = useTranslator();
+  return (
+    <Card title={t('encounter.addendum.title')} className="or-note__addendum">
+      <p className="or-caption" id="addendum-hint">
+        {t('encounter.addendum.hint')}
+      </p>
+      <label className="or-note__addendum-label" htmlFor="addendum-text">
+        {t('encounter.addendum.label')}
+      </label>
+      <textarea
+        id="addendum-text"
+        className="or-note-block__field"
+        aria-describedby="addendum-hint"
+        rows={4}
+        value={text}
+        onChange={(event) => onTextChange(event.target.value)}
+      />
+      <div className="or-note__addendum-actions">
+        <Button variant="ghost" onClick={onDiscard}>
+          {t('encounter.addendum.discard')}
+        </Button>
+        <Button
+          variant="primary"
+          iconLeft="pen-line"
+          disabled={text.trim().length === 0}
+          onClick={onSign}
+        >
+          {t('encounter.action.signAddendum')}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+interface ConfirmDialogProps {
+  open: boolean;
+  title: string;
+  description: string;
+  onClose: () => void;
+  onConfirm: () => void;
+  pending: boolean;
+  confirmLabel: string;
+  error: ApiError | null;
+  children: ReactNode;
+}
+
+/**
+ * One deliberate step before a signature: the consequence in a sentence, the
+ * verb on the button, and the server's refusal beside it if there is one.
+ */
+function ConfirmDialog({
+  open,
+  title,
+  description,
+  onClose,
+  onConfirm,
+  pending,
+  confirmLabel,
+  error,
+  children,
+}: Readonly<ConfirmDialogProps>): ReactElement {
+  const t = useTranslator();
+  return (
+    <Modal
+      open={open}
+      role="alertdialog"
+      title={title}
+      description={description}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t('encounter.action.cancel')}
+          </Button>
+          <Button variant="primary" disabled={pending} onClick={onConfirm}>
+            {pending ? t('encounter.action.signing') : confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      {children}
+      {error ? (
+        <p className="or-body" role="alert">
+          {error.problem?.detail ?? error.message}
+        </p>
       ) : null}
-    </div>
+    </Modal>
   );
 }

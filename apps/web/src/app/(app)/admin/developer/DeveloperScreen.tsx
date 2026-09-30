@@ -579,6 +579,96 @@ function DeveloperRegistries({
   );
 }
 
+/** One SMART app, open whenever an app row is selected. */
+function AppDrawer({
+  app,
+  onClose,
+}: Readonly<{ app: SmartApp | null; onClose: () => void }>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <Drawer
+      open={app !== null}
+      title={app?.name ?? ''}
+      description={t('admin.developer.apps.drawerDescription')}
+      width={720}
+      onClose={onClose}
+      meta={
+        app ? (
+          <Badge tone={app.status === 'APPROVED' ? 'success' : 'neutral'}>
+            {app.status === 'APPROVED'
+              ? t('admin.developer.apps.approved')
+              : t('admin.developer.apps.waiting')}
+          </Badge>
+        ) : null
+      }
+      footer={
+        app ? (
+          <>
+            <Button variant="ghost" onClick={onClose}>
+              {t('admin.action.close')}
+            </Button>
+            {/* Disabled: this reported a successful launch without asking the
+                app anything, so one that could not be launched looked
+                launchable. */}
+            <Button variant="secondary" disabled>
+              {t('admin.developer.apps.testLaunch')}
+            </Button>
+          </>
+        ) : null
+      }
+    >
+      {app ? (
+        <div className="or-stack">
+          <Demonstration message={t('admin.developer.apps.launchNotBuilt')} />
+          <AppDetail app={app} />
+        </div>
+      ) : null}
+    </Drawer>
+  );
+}
+
+/** One webhook, open whenever a webhook row is selected. */
+function HookDrawer({
+  hook,
+  onClose,
+  onRetry,
+}: Readonly<{
+  hook: Webhook | null;
+  onClose: () => void;
+  onRetry: (message: string) => void;
+}>): ReactElement {
+  const t = useTranslator();
+
+  return (
+    <Drawer
+      open={hook !== null}
+      title={hook ? t('admin.developer.hooks.drawerTitle', { event: hook.event }) : ''}
+      description={hook?.endpoint}
+      width={720}
+      onClose={onClose}
+      meta={hook ? <HookStatusBadge status={hook.status} /> : null}
+      footer={
+        hook ? (
+          <>
+            <Button variant="ghost" onClick={onClose}>
+              {t('admin.action.close')}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => onRetry(t('admin.developer.hooks.retryToast', { event: hook.event }))}
+            >
+              {t('admin.developer.hooks.retry')}
+            </Button>
+          </>
+        ) : null
+      }
+    >
+      {hook ? <HookDetail hook={hook} /> : null}
+    </Drawer>
+  );
+}
+
 export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): ReactElement {
   const t = useTranslator();
   const options = useAdminClientOption(client);
@@ -721,75 +811,10 @@ export function DeveloperScreen({ client }: Readonly<DeveloperScreenProps>): Rea
       </Drawer>
 
       {/* ---- App detail ------------------------------------------------ */}
-      <Drawer
-        open={selectedApp !== null}
-        title={selectedApp?.name ?? ''}
-        description={t('admin.developer.apps.drawerDescription')}
-        width={720}
-        onClose={() => setOpenApp(null)}
-        meta={
-          selectedApp ? (
-            <Badge tone={selectedApp.status === 'APPROVED' ? 'success' : 'neutral'}>
-              {selectedApp.status === 'APPROVED'
-                ? t('admin.developer.apps.approved')
-                : t('admin.developer.apps.waiting')}
-            </Badge>
-          ) : null
-        }
-        footer={
-          selectedApp ? (
-            <>
-              <Button variant="ghost" onClick={() => setOpenApp(null)}>
-                {t('admin.action.close')}
-              </Button>
-              {/* Disabled: this reported a successful launch without asking the
-                  app anything, so one that could not be launched looked
-                  launchable. */}
-              <Button variant="secondary" disabled>
-                {t('admin.developer.apps.testLaunch')}
-              </Button>
-            </>
-          ) : null
-        }
-      >
-        {selectedApp ? (
-          <div className="or-stack">
-            <Demonstration message={t('admin.developer.apps.launchNotBuilt')} />
-            <AppDetail app={selectedApp} />
-          </div>
-        ) : null}
-      </Drawer>
+      <AppDrawer app={selectedApp} onClose={() => setOpenApp(null)} />
 
       {/* ---- Webhook detail -------------------------------------------- */}
-      <Drawer
-        open={selectedHook !== null}
-        title={
-          selectedHook ? t('admin.developer.hooks.drawerTitle', { event: selectedHook.event }) : ''
-        }
-        description={selectedHook?.endpoint}
-        width={720}
-        onClose={() => setOpenHook(null)}
-        meta={selectedHook ? <HookStatusBadge status={selectedHook.status} /> : null}
-        footer={
-          selectedHook ? (
-            <>
-              <Button variant="ghost" onClick={() => setOpenHook(null)}>
-                {t('admin.action.close')}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  setToast(t('admin.developer.hooks.retryToast', { event: selectedHook.event }))
-                }
-              >
-                {t('admin.developer.hooks.retry')}
-              </Button>
-            </>
-          ) : null
-        }
-      >
-        {selectedHook ? <HookDetail hook={selectedHook} /> : null}
-      </Drawer>
+      <HookDrawer hook={selectedHook} onClose={() => setOpenHook(null)} onRetry={setToast} />
 
       {toast ? (
         <div className="or-toast-region">

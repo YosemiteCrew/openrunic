@@ -20,7 +20,14 @@ import {
   useResults,
   worklist,
 } from '@/lib/api';
-import type { Assignment, ResultFlag, ResultPage, ResultReport, WorklistClient } from '@/lib/api';
+import type {
+  Assignment,
+  PatientLookup,
+  ResultFlag,
+  ResultPage,
+  ResultReport,
+  WorklistClient,
+} from '@/lib/api';
 import { clinicNow } from '@/lib/api/chart';
 import { formatName } from '@/lib/format';
 import { formatCount } from '@openrunic/i18n';
@@ -350,6 +357,103 @@ function useSignOff(writer: WorklistClient, now: string, refresh: () => void) {
   );
 }
 
+/**
+ * The report being read, with its values once they have loaded, and whether
+ * every one of them is on screen to be signed against.
+ */
+function useReading(selected: ResultReport | null, client: WorklistClient | undefined) {
+  /* The analytes of the one report being read. Fetched here rather than with
+     the list, because one call per row is N+1 on a queue built to be scanned
+     and the values of a report nobody opened are never looked at. */
+  const analytes = useResultAnalytes(selected?.id ?? null, { client });
+  const reading =
+    selected && analytes.data ? { ...selected, analytes: analytes.data.data } : selected;
+  /* What the laboratory reported and this page of the report does not hold. The
+     route paginates these too, so the pane states its own residual the way the
+     queue states the rows it refused. */
+  const unshownAnalytes = analytes.data
+    ? Math.max(analytes.data.page.total - analytes.data.data.length, 0)
+    : 0;
+  /* Sign-off waits until every value is on screen. The list does not carry
+     them, so while they load - or after they fail to, or when the report holds
+     more than one page of them - the pane would show a report short of its
+     values and still offer to sign it. */
+  const readable = analytes.status === 'success' && unshownAnalytes === 0;
+  return { analytes, reading, unshownAnalytes, readable };
+}
+
+/** The name the sign-off dialogs give the selected report's patient. */
+function patientNameOf(
+  t: ReturnType<typeof useTranslator>,
+  selected: ResultReport | null,
+  patientNamed: PatientLookup
+): string {
+  const selectedPatient = selected ? patientNamed(selected.patientId) : undefined;
+  return selectedPatient ? formatName(selectedPatient.name, 'full') : t('results.thisPatient');
+}
+
+/**
+ * The two ways one report is signed: as it stands, or with a note.
+ */
+function SignDialogs({
+  signing,
+  patientName,
+  disabled,
+  onCancel,
+  onSign,
+}: Readonly<{
+  signing: Signing | null;
+  patientName: string;
+  disabled: boolean;
+  onCancel: () => void;
+  onSign: (report: ResultReport, note: string | null) => void;
+}>): ReactElement {
+  const t = useTranslator();
+  return (
+    <>
+      <Modal
+        open={signing !== null && !signing.withNote}
+        title={t('results.sign.title')}
+        description={
+          signing
+            ? t('results.sign.description', {
+                panel: signing.report.panel,
+                patient: patientName,
+              })
+            : ''
+        }
+        onClose={onCancel}
+        footer={
+          <>
+            <Button variant="ghost" onClick={onCancel}>
+              {t('results.sign.cancel')}
+            </Button>
+            <Button
+              iconLeft="pen-line"
+              disabled={disabled}
+              onClick={() => (signing ? onSign(signing.report, null) : undefined)}
+            >
+              {t('results.sign.confirm')}
+            </Button>
+          </>
+        }
+      />
+
+      {/* Keyed on the report being signed, so a note survives a refused
+          sign-off and its retry but never carries over to another result. */}
+      <SignNoteModal
+        key={signing?.withNote ? signing.report.id : 'closed'}
+        open={signing?.withNote === true}
+        subject={signing?.report.panel ?? ''}
+        patientName={patientName}
+        onCancel={onCancel}
+        onConfirm={(note) => (signing ? onSign(signing.report, note || null) : undefined)}
+        disabled={disabled}
+      />
+    </>
+  );
+}
+
 export function ResultsScreen({
   client,
   now: fixedNow,
@@ -400,23 +504,7 @@ export function ResultsScreen({
   const patientNamed = usePatientNames(reports.map((report) => report.patientId));
   const providerNamed = useProviderNames();
 
-  /* The analytes of the one report being read. Fetched here rather than with
-     the list, because one call per row is N+1 on a queue built to be scanned
-     and the values of a report nobody opened are never looked at. */
-  const analytes = useResultAnalytes(selected?.id ?? null, { client });
-  const reading =
-    selected && analytes.data ? { ...selected, analytes: analytes.data.data } : selected;
-  /* What the laboratory reported and this page of the report does not hold. The
-     route paginates these too, so the pane states its own residual the way the
-     queue states the rows it refused. */
-  const unshownAnalytes = analytes.data
-    ? Math.max(analytes.data.page.total - analytes.data.data.length, 0)
-    : 0;
-  /* Sign-off waits until every value is on screen. The list does not carry
-     them, so while they load - or after they fail to, or when the report holds
-     more than one page of them - the pane would show a report short of its
-     values and still offer to sign it. */
-  const readable = analytes.status === 'success' && unshownAnalytes === 0;
+  const { analytes, reading, unshownAnalytes, readable } = useReading(selected, client);
 
   const signOne = useCallback(
     async (report: ResultReport, note: string | null) => {
@@ -446,10 +534,7 @@ export function ResultsScreen({
     setBulkOpen,
   });
 
-  const selectedPatient = selected ? patientNamed(selected.patientId) : undefined;
-  const selectedPatientName = selectedPatient
-    ? formatName(selectedPatient.name, 'full')
-    : t('results.thisPatient');
+  const selectedPatientName = patientNameOf(t, selected, patientNamed);
 
   return (
     <AppShell
@@ -545,44 +630,12 @@ export function ResultsScreen({
         )}
       </AsyncBoundary>
 
-      <Modal
-        open={signing !== null && !signing.withNote}
-        title={t('results.sign.title')}
-        description={
-          signing
-            ? t('results.sign.description', {
-                panel: signing.report.panel,
-                patient: selectedPatientName,
-              })
-            : ''
-        }
-        onClose={() => setSigning(null)}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setSigning(null)}>
-              {t('results.sign.cancel')}
-            </Button>
-            <Button
-              iconLeft="pen-line"
-              disabled={busy || !readable}
-              onClick={() => (signing ? void signOne(signing.report, null) : undefined)}
-            >
-              {t('results.sign.confirm')}
-            </Button>
-          </>
-        }
-      />
-
-      {/* Keyed on the report being signed, so a note survives a refused
-          sign-off and its retry but never carries over to another result. */}
-      <SignNoteModal
-        key={signing?.withNote ? signing.report.id : 'closed'}
-        open={signing?.withNote === true}
-        subject={signing?.report.panel ?? ''}
+      <SignDialogs
+        signing={signing}
         patientName={selectedPatientName}
-        onCancel={() => setSigning(null)}
-        onConfirm={(note) => (signing ? void signOne(signing.report, note || null) : undefined)}
         disabled={busy || !readable}
+        onCancel={() => setSigning(null)}
+        onSign={(report, note) => void signOne(report, note)}
       />
 
       <Modal

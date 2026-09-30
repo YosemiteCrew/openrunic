@@ -120,7 +120,7 @@ export function cdsRoutes(): Hono<AppEnv> {
  * spelling of "who may do this".
  */
 function requireServicePermission(): MiddlewareHandler<AppEnv> {
-  return createMiddleware<AppEnv>(async (c, next) => {
+  return createMiddleware<AppEnv>((c, next) => {
     // `?? ''` because a middleware is not bound to the path pattern the way a
     // handler is, so the parameter reads as optional here. An empty id is no
     // service, which `serviceById` refuses as a 404 - the same answer an unknown

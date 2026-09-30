@@ -820,6 +820,48 @@ describe('the bounds, which are reported rather than silent', () => {
 /** The system-level entry, read off the list the router mounts rather than retyped. */
 const SYSTEM_ENTRY = BULK_EXPORT_OPERATIONS.find((operation) => operation.scope === 'system')!;
 
+describe('the order an export is built in', () => {
+  /**
+   * One type at a time, in the order the modules are served.
+   *
+   * A type can hold up to the ceiling in memory, so two at once is twice the
+   * peak, and the files and the read record follow module order either way.
+   * The first type is made the slow one, so a run that started the second
+   * before the first had finished would show it in the log and in the files.
+   */
+  it('reads each type to the end before starting the next, and files them in module order', async () => {
+    const { app, dataset } = harness();
+    seed(dataset, 'Encounter', makeEncounterSeed());
+
+    const log: string[] = [];
+    const logged = SERVED_MODULES.filter(
+      (module) => module.type === 'Patient' || module.type === 'Encounter'
+    ).map((module, index) => ({
+      ...module,
+      search: async (...args: Parameters<typeof module.search>) => {
+        log.push(`start ${module.type}`);
+        if (index === 0) await new Promise((resolve) => setTimeout(resolve, 20));
+        const page = await module.search(...args);
+        log.push(`end ${module.type}`);
+        return page;
+      },
+    }));
+    const [first, second] = logged.map((module) => module.type);
+    expect([first, second].sort()).toEqual(['Encounter', 'Patient']);
+
+    let captured: Awaited<ReturnType<typeof runExport>> | undefined;
+    app.get('/probe', async (c) => {
+      captured = await runExport(c, logged, ['Encounter', 'Patient'], undefined);
+      return c.body(null, 204);
+    });
+    const res = await app.request('/probe', { headers: bearer(TOKENS.adminA) });
+
+    expect(res.status).toBe(204);
+    expect(log).toEqual([`start ${first}`, `end ${first}`, `start ${second}`, `end ${second}`]);
+    expect(captured?.files.map((file) => file.type)).toEqual([first, second]);
+  });
+});
+
 describe('jobFor, at its edges', () => {
   /** A policy context that permits everything, so scopes are the only variable. */
   const allowAll: PolicyContext = {

@@ -6,6 +6,7 @@ import { ApiError } from '../errors.js';
 import { assertCareRelationship } from '../middleware/policy.js';
 import { chartIdOf } from '../policy/chart.js';
 import type { PolicyContext } from '../policy/policy.js';
+import { inSequence } from '../repositories/collection.js';
 import type { CollectionKey, Repositories } from '../repositories/types.js';
 
 /** The `:id` path parameter: always a UUID, never a sequential integer. */
@@ -115,11 +116,12 @@ export async function gateCharts(
   chartFrom: CollectionKey,
   rows: readonly unknown[]
 ): Promise<void> {
-  for (const chart of new Set(
-    rows.map((row) => chartIdOf(chartFrom, row)).filter((id) => id !== undefined)
-  )) {
-    await assertCareRelationship(c, chart);
-  }
+  // One chart at a time: the first refusal ends the request, and no chart after
+  // it is checked or recorded as accessed.
+  await inSequence(
+    [...new Set(rows.map((row) => chartIdOf(chartFrom, row)).filter((id) => id !== undefined))],
+    (chart) => assertCareRelationship(c, chart)
+  );
 }
 
 /**

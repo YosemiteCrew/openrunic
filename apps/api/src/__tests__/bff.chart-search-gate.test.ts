@@ -100,3 +100,85 @@ describe('the FHIR set-search gate on clinical resources', () => {
     expect(res.status).toBe(200);
   });
 });
+
+/**
+ * The charts on one page are decided one at a time, and the first refusal ends
+ * the request.
+ *
+ * A refused page is a 404 however the decisions are made, so the status alone
+ * cannot tell a gate that stops at the refusal from one that went on deciding
+ * the rest of the page. The audit trail can: a chart the request never got to
+ * must not be recorded as accessed by a request that returned nothing.
+ */
+describe('a page with a refused chart stops at the refusal', () => {
+  const KNOWN = testId(73011);
+
+  /** Two charts, one condition each. Only KNOWN has a relationship. */
+  const twoCharts = (dataset: ReturnType<typeof createTestApp>['dataset']): void => {
+    seedStrangerCondition(dataset);
+    seed(dataset, 'Patient', makePatientRow({ id: KNOWN, mrn: 'OR-730110' }));
+    seed(dataset, 'Condition', {
+      id: testId(73012),
+      tenantId: DEMO_TENANT_A,
+      patientId: KNOWN,
+      encounterId: null,
+      category: 'PROBLEM_LIST_ITEM',
+      code: 'E11.9',
+      codeSystem: 'http://hl7.org/fhir/sid/icd-10-cm',
+      display: 'Type 2 diabetes mellitus',
+      snomedCode: null,
+      clinicalStatus: 'ACTIVE',
+      verificationStatus: 'CONFIRMED',
+      onsetDate: null,
+      abatementDate: null,
+      severityCode: null,
+      bodySiteCode: null,
+      note: null,
+      // Earlier than the stranger's, so newest first puts the stranger's chart
+      // first on the page.
+      recordedAt: new Date(FIXED_NOW.getTime() - 60_000),
+      recordedById: null,
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    });
+    seedCareRelationship(dataset, {
+      patientId: KNOWN,
+      providerId: '01890000-0000-7000-8000-000000000101',
+      as: 'appointment',
+      id: testId(73013),
+    });
+  };
+
+  const decisions = (sink: ReturnType<typeof createTestApp>['sink']): string[] =>
+    sink.events
+      .filter((entry) => entry.event.action.startsWith('chart.access'))
+      .map((entry) => `${entry.event.action} ${String(entry.event.patientId)}`);
+
+  it.each([
+    ['a FHIR search', '/fhir/Condition?code=E11.9'],
+    ['a BFF list', '/bff/v0/problems?pageSize=10&sort=recordedAt&order=desc'],
+  ])('%s records the refusal and nothing after it', async (_, path) => {
+    const { app, dataset, sink } = createTestApp();
+    twoCharts(dataset);
+
+    const res = await app.request(path, { headers: bearer(TOKENS.clinicianA) });
+
+    expect(res.status).toBe(404);
+    expect(decisions(sink)).toEqual([`chart.access.denied ${STRANGER}`]);
+  });
+
+  it.each([
+    ['a FHIR search', '/fhir/Condition?code=E11.9'],
+    ['a BFF list', '/bff/v0/problems?pageSize=10&sort=recordedAt&order=desc'],
+  ])('%s decides every chart in page order once both are known', async (_, path) => {
+    const { app, dataset, sink } = createTestApp();
+    twoCharts(dataset);
+    authorise(dataset);
+
+    const res = await app.request(path, { headers: bearer(TOKENS.clinicianA) });
+
+    expect(res.status).toBe(200);
+    // Also the premise of the case above: the stranger's chart is first on the page.
+    expect(decisions(sink)).toEqual([`chart.access ${STRANGER}`, `chart.access ${KNOWN}`]);
+  });
+});

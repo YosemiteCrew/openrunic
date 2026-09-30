@@ -32,6 +32,7 @@ export const TOOL_ALLOWLIST: ToolAllowlist = {
       'documents.extractCandidates',
       'messages.draftReply',
       'referrals.reviewPreparation',
+      'encounters.prepareBrief',
     ],
     biller: [
       'chart.search',

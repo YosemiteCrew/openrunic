@@ -45,6 +45,7 @@ describe('resolving tools for a principal', () => {
       'appointments.propose',
       'documents.extractCandidates',
       'messages.draftReply',
+      'encounters.prepareBrief',
     ]);
   });
 
@@ -151,6 +152,7 @@ describe('the reader/writer split at resolve time', () => {
       'chart.search',
       'authorisation.reviewEvidence',
       'appointments.findSlots',
+      'encounters.prepareBrief',
     ]);
     expect(readerTools.every((tool) => tool.sideEffect === 'read')).toBe(true);
   });

@@ -15,6 +15,7 @@ import { messagesDraftReply } from './tools/messages-draft-reply.js';
 import { priorauthAssemblePacket } from './tools/priorauth-assemble-packet.js';
 import { recordList } from './tools/record-list.js';
 import { referralsReviewPreparation } from './tools/referrals-review-preparation.js';
+import { encountersPrepareBrief } from './tools/encounters-prepare-brief.js';
 import { visitsList } from './tools/visits-list.js';
 
 /**
@@ -44,6 +45,7 @@ export const V1_TOOLS: readonly AgentTool[] = [
   documentsExtractCandidates,
   messagesDraftReply,
   referralsReviewPreparation,
+  encountersPrepareBrief,
   codingSuggest,
 ];
 

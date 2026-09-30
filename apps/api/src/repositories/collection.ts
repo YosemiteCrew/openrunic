@@ -395,13 +395,15 @@ export async function listAll<TRow, TQuery extends BaseQuery>(
 }
 
 /**
- * How many independent queries one request keeps in flight at once.
+ * How many independent repository calls one request keeps in flight at once.
  *
- * Half of the connection pool's default of ten, so a request fanning out over
- * two hundred lines neither opens two hundred queries nor holds every
- * connection another request is waiting for.
+ * Each call runs in its own transaction on its own connection, and a `list`
+ * takes two (the page and the count), so two calls hold at most four of the
+ * pool's default ten. A request fanning out over two hundred lines then
+ * neither waits on each line in turn nor takes the connections every other
+ * request is queued for.
  */
-export const FAN_OUT = 5;
+export const FAN_OUT = 2;
 
 /**
  * `task` over every item, at most {@link FAN_OUT} at a time, results in input

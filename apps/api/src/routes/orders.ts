@@ -618,7 +618,7 @@ function transitionRoutes(): Hono<AppEnv> {
       sort: 'createdAt',
       order: 'asc',
     });
-    // Each task is its own row and its own write, so they go a few at a time
+    // Each task is its own row and its own write, so they go in small batches
     // rather than one after another.
     const completedAt = new Date();
     await mapInBatches(open, (task) =>

@@ -88,9 +88,9 @@ export function createWebHostedSynthesiser(): HostedSynthesiser | null {
         },
       };
 
-      /* Fetch the audio, then play it. A failure before playback begins is
-         not reported once the caller has stopped it, since nothing is waiting
-         for it any more. */
+      /* Fetch the audio, then play it. A request or download that fails after
+         the caller has stopped playback is not reported, since nothing is
+         waiting for it any more. */
       const fetchAudio = async (): Promise<HTMLAudioElement | null> => {
         try {
           const response = await fetch(config.endpoint, {

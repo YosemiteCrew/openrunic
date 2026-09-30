@@ -793,7 +793,7 @@ export function inventoryRoutes(): Hono<AppEnv> {
     const repos = repositories(c);
 
     // Every read a line needs depends on the body alone, so they are made up
-    // front, a few at a time. The walk below still goes one line after another,
+    // front, in small batches. The walk below still goes one line after another,
     // because what one line mints and sequences is what the next one sees, and it
     // refuses a bad line at the same point it always did.
     const reads = await mapInBatches(body.lines, async (line) => ({
@@ -1111,7 +1111,7 @@ export function inventoryRoutes(): Hono<AppEnv> {
     const variances: CountResult['variances'] = [];
     const ledger: MovementRow[] = [];
 
-    // Every lot on the sheet in one query, and each one's ledger a few at a time
+    // Every lot on the sheet in one query, and each one's ledger in small batches
     // rather than one after another: none of them depends on another, and all
     // of them are read before any of this posting's lines are written.
     const lots = await lotsByIdOf(

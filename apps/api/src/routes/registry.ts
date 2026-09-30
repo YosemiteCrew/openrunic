@@ -254,11 +254,13 @@ export function registryRoutes(router: Hono<AppEnv>): void {
       }
 
       const repos = repositories(c);
-      // Each dose is stamped on its own, so they are stamped together.
-      const updated = await mapInBatches(body.immunisationIds, (id) =>
+      // Each dose is stamped on its own, so they are stamped together, once
+      // each even when the caller names one twice.
+      const updated = await mapInBatches([...new Set(body.immunisationIds)], (id) =>
         repos.immunisations.update(id, { reportedToRegistryAt: body.reportedAt })
       );
-      const reported = updated.flatMap((dose) => (dose === null ? [] : [dose.id]));
+      const stamped = new Set(updated.flatMap((dose) => (dose === null ? [] : [dose.id])));
+      const reported = body.immunisationIds.filter((id) => stamped.has(id));
 
       await c.get('audit')?.write({
         action: 'registry.reported',

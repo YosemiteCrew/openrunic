@@ -1,6 +1,8 @@
 import { buildAck, parseVxu } from '@openrunic/hl7v2';
 import { describe, expect, it } from 'vitest';
 
+import type { RepositoryRegistry } from '../repositories/types.js';
+
 import {
   bearer,
   createTestApp,
@@ -38,8 +40,10 @@ const SENDER = {
   version: '2.5.1',
 };
 
-function harness(): ReturnType<typeof createTestApp> {
-  const created = createTestApp();
+function harness(
+  options: Parameters<typeof createTestApp>[0] = {}
+): ReturnType<typeof createTestApp> {
+  const created = createTestApp(options);
   seed(created.dataset, 'Patient', makePatientRow({ id: PATIENT }));
   /* The registry queue is a list of chart data and is gated on the page like
      every other one (#300). This suite is about what the queue reports and what
@@ -343,12 +347,32 @@ describe('acknowledging, which is the only thing that records a report', () => {
   });
 
   it('stamps every dose in a batch and reports them in the order they were sent', async () => {
-    const { app, dataset } = harness();
+    // The first stamp is held back, so a report built in the order the stamps
+    // finish rather than the order they were sent would come out different.
+    const stampedIds: string[] = [];
+    const { app, dataset } = harness({
+      decorateRepositories: (registry: RepositoryRegistry): RepositoryRegistry => ({
+        forRequest: (scope) => {
+          const real = registry.forRequest(scope);
+          const target = real.immunisations;
+          return {
+            ...real,
+            immunisations: {
+              ...target,
+              update: async (id: string, patch: Parameters<typeof target.update>[1]) => {
+                if (stampedIds.push(id) === 1) await new Promise((done) => setTimeout(done, 20));
+                return target.update(id, patch);
+              },
+            },
+          };
+        },
+      }),
+    });
     const later = testId(303);
     const earlier = testId(301);
     seedDose(dataset, { ...storageColumns(later) });
     seedDose(dataset, { ...storageColumns(earlier) });
-    const sent = [later, testId(999), DOSE, earlier];
+    const sent = [later, DOSE, testId(999), earlier];
     expect((await pending(app)).total).toBe(3);
 
     const body = (await (await acknowledge(app, accepted(), sent)).json()) as {
@@ -356,7 +380,22 @@ describe('acknowledging, which is the only thing that records a report', () => {
     };
 
     expect(body.reported).toEqual([later, DOSE, earlier]);
+    expect(stampedIds).toEqual(sent);
     expect((await pending(app)).total).toBe(0);
+  });
+
+  it('stamps a dose named twice once, and reports it as often as it was named', async () => {
+    const { app, auditStore } = harness();
+
+    const body = (await (await acknowledge(app, accepted(), [DOSE, DOSE])).json()) as {
+      reported: string[];
+    };
+
+    expect(body.reported).toEqual([DOSE, DOSE]);
+    const stamps = auditStore
+      .chain(DEMO_TENANT_A)
+      .filter((event) => event.action === 'immunisation.updated' && event.targetId === DOSE);
+    expect(stamps).toHaveLength(1);
   });
 });
 

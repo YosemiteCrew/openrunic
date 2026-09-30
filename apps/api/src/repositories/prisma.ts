@@ -13,6 +13,7 @@ import {
   type CompartmentRule,
   type Page,
   type RowContext,
+  inSequence,
 } from './collection.js';
 import type { DbPort, DbTransaction } from './db-port.js';
 import { buildRepositories, type RequestScope } from './registry.js';
@@ -292,12 +293,14 @@ export function createPrismaCollection<
       } as CreateArgs<M>);
       const row = toPlainRow<M>(record) as ScopedRow<M>;
 
-      for (const batch of spec.childRows?.(input, row, context) ?? []) {
-        await writeChildren(tx, batch);
-      }
-      for (const patch of spec.childPatches?.(input, row, context) ?? []) {
-        await patchChild(tx, patch);
-      }
+      // One after another: every statement here shares the transaction's
+      // single connection.
+      await inSequence(spec.childRows?.(input, row, context) ?? [], (batch) =>
+        writeChildren(tx, batch)
+      );
+      await inSequence(spec.childPatches?.(input, row, context) ?? [], (patch) =>
+        patchChild(tx, patch)
+      );
 
       await audit.write(writeEvent(row, null, Object.keys(columns)), tx);
       return row;
@@ -418,12 +421,12 @@ export function createPrismaCollection<
   };
 }
 
-async function writeChildren(tx: DbTransaction, batch: ChildBatch): Promise<void> {
-  for (const child of batch.rows) {
-    await tx.model(batch.model).create({
+function writeChildren(tx: DbTransaction, batch: ChildBatch): Promise<void> {
+  return inSequence(batch.rows, (child) =>
+    tx.model(batch.model).create({
       data: { ...omitNulls(child), tenantId: TENANT_STAMPED_BY_CLIENT },
-    } as CreateArgs<PrismaModelName>);
-  }
+    } as CreateArgs<PrismaModelName>)
+  );
 }
 
 /**

@@ -396,6 +396,154 @@ describe('receiving a delivery', () => {
   });
 });
 
+describe('a delivery or a count of many lines', () => {
+  /**
+   * The reads a line needs are made together, a few at a time, and the walk
+   * over the lines then goes in order. These pin what that must not change:
+   * which lot each line lands in, the sequence each takes, and which line is
+   * refused when more than one is wrong.
+   */
+  it('sequences interleaved lines of two items against each known lot', async () => {
+    const { app } = harness();
+    await postOk(app, 'receipts', delivery('LOT-A', 40));
+    await postOk(app, 'receipts', {
+      facilityId: DEMO_FACILITY_A,
+      occurredOn: '2026-08-01',
+      lines: [{ itemId: ITEM_VIAL, lotNumber: 'LOT-V', quantity: 6 }],
+    });
+    await postOk(app, 'receipts', delivery('LOT-A', 1));
+
+    const posting = await postOk(app, 'receipts', {
+      facilityId: DEMO_FACILITY_A,
+      occurredOn: '2026-08-02',
+      lines: [
+        { itemId: ITEM_CAPSULE, lotNumber: 'LOT-A', quantity: 5 },
+        { itemId: ITEM_VIAL, lotNumber: 'LOT-V', quantity: 3 },
+        { itemId: ITEM_CAPSULE, lotNumber: 'LOT-A', quantity: 2 },
+        { itemId: ITEM_VIAL, lotNumber: 'LOT-V', quantity: 1 },
+        { itemId: ITEM_VIAL, lotNumber: 'LOT-W', quantity: 4 },
+      ],
+    });
+
+    // The capsule lot already holds two movements and the vial lot one, so each
+    // continues its own count, and the new carton starts its own at one.
+    expect(posting.movements.map((movement) => [movement.itemId, movement.lotSeq])).toEqual([
+      [ITEM_CAPSULE, 3],
+      [ITEM_VIAL, 2],
+      [ITEM_CAPSULE, 4],
+      [ITEM_VIAL, 3],
+      [ITEM_VIAL, 1],
+    ]);
+    expect((await stockOf(app, ITEM_CAPSULE)).onHand).toBe(48);
+    expect((await stockOf(app, ITEM_VIAL)).onHand).toBe(14);
+  });
+
+  it('keeps every line of a long delivery in the order it was sent', async () => {
+    const { app } = harness();
+    const lotNumbers = Array.from({ length: 12 }, (_, i) => `LOT-${String(i).padStart(2, '0')}`);
+
+    const posting = await postOk(app, 'receipts', {
+      facilityId: DEMO_FACILITY_A,
+      occurredOn: '2026-08-01',
+      lines: lotNumbers.map((lotNumber, i) => ({
+        itemId: ITEM_CAPSULE,
+        lotNumber,
+        quantity: i + 1,
+      })),
+    });
+
+    expect(posting.movements.map((movement) => movement.quantity)).toEqual(
+      lotNumbers.map((_, i) => i + 1)
+    );
+    expect(new Set(posting.movements.map((movement) => movement.lotId)).size).toBe(12);
+  });
+
+  it('refuses the first bad line of a delivery, not the first one read', async () => {
+    const { app } = harness();
+
+    const packsFirst = await post(app, 'receipts', {
+      facilityId: DEMO_FACILITY_A,
+      occurredOn: '2026-08-01',
+      lines: [
+        { itemId: ITEM_VIAL, lotNumber: 'LOT-V', packs: 3 },
+        { itemId: testId(999), lotNumber: 'LOT-X', quantity: 1 },
+      ],
+    });
+    const missingFirst = await post(app, 'receipts', {
+      facilityId: DEMO_FACILITY_A,
+      occurredOn: '2026-08-01',
+      lines: [
+        { itemId: testId(999), lotNumber: 'LOT-X', quantity: 1 },
+        { itemId: ITEM_VIAL, lotNumber: 'LOT-V', packs: 3 },
+      ],
+    });
+
+    expect(packsFirst.status).toBe(422);
+    expect(await packsFirst.text()).toContain('lines.0.packs');
+    expect(missingFirst.status).toBe(404);
+  });
+
+  it('compares every lot on a long count sheet with its own ledger', async () => {
+    const { app } = harness();
+    const lotNumbers = Array.from({ length: 12 }, (_, i) => `LOT-${String(i).padStart(2, '0')}`);
+    const received = await postOk(app, 'receipts', {
+      facilityId: DEMO_FACILITY_A,
+      occurredOn: '2026-08-01',
+      lines: lotNumbers.map((lotNumber, i) => ({
+        itemId: ITEM_CAPSULE,
+        lotNumber,
+        quantity: (i + 1) * 10,
+      })),
+    });
+    const lotIds = received.movements.map((movement) => movement.lotId);
+
+    const res = await post(
+      app,
+      'counts',
+      {
+        facilityId: DEMO_FACILITY_A,
+        occurredOn: TODAY,
+        reason: 'monthly cycle count',
+        // Every lot one short of what it received, so each line's variance is
+        // one only if it was compared with its own lot's ledger.
+        lines: lotIds.map((lotId, i) => ({ lotId, counted: (i + 1) * 10 - 1 })),
+      },
+      TOKENS.adminA
+    );
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      variances: { lotId: string; expected: number; quantity: number }[];
+    };
+    expect(
+      body.variances.map((variance) => [variance.lotId, variance.expected, variance.quantity])
+    ).toEqual(lotIds.map((lotId, i) => [lotId, (i + 1) * 10, 1]));
+  });
+
+  it('refuses the first bad line of a count sheet, not the first one read', async () => {
+    const { app } = harness();
+    await postOk(app, 'receipts', delivery('LOT-A', 40));
+    const lotId = (await stockOf(app, ITEM_CAPSULE)).lots[0]?.lotId ?? '';
+
+    const sheet = (lines: { lotId: string; counted: number }[]) =>
+      post(
+        app,
+        'counts',
+        { facilityId: DEMO_FACILITY_A, occurredOn: TODAY, reason: 'monthly cycle count', lines },
+        TOKENS.adminA
+      );
+    const missing = { lotId: testId(998), counted: 1 };
+    const unreadable = { lotId, counted: 1e308 };
+
+    const missingFirst = await sheet([missing, unreadable]);
+    const unreadableFirst = await sheet([unreadable, missing]);
+
+    expect(missingFirst.status).toBe(404);
+    expect(unreadableFirst.status).toBe(422);
+    expect(await unreadableFirst.text()).toContain('lines.0.counted');
+  });
+});
+
 describe('dispensing', () => {
   /**
    * The whole reason `courseTotal` exists. Three numbers are visible - 1, 2 and

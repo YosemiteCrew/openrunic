@@ -18,7 +18,7 @@ import type { RouteContract } from '../openapi/registry.js';
 
 import { referralRouteContracts, referralRoutes } from './referrals.js';
 import type { Permission } from '../policy/permissions.js';
-import { listAll } from '../repositories/collection.js';
+import { listAll, mapInBatches } from '../repositories/collection.js';
 import type {
   DocumentStatus,
   MessageSenderType,
@@ -618,15 +618,17 @@ function transitionRoutes(): Hono<AppEnv> {
       sort: 'createdAt',
       order: 'asc',
     });
+    // Each task is its own row and its own write, so they go a few at a time
+    // rather than one after another.
     const completedAt = new Date();
-    for (const task of open) {
-      await tasks.update(task.id, {
+    await mapInBatches(open, (task) =>
+      tasks.update(task.id, {
         status: 'DONE',
         completedAt,
         completedById: reviewedById,
         outcome: 'Reviewed and signed off',
-      });
-    }
+      })
+    );
 
     return c.json(toDiagnosticReportDto(row));
   });

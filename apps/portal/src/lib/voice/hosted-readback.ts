@@ -88,47 +88,59 @@ export function createPortalHostedSynthesiser(): HostedSynthesiser | null {
         },
       };
 
-      /* Fetch the audio from the hosted TTS service. */
-      fetch(config.endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'audio/*, */*',
-        },
-        body: JSON.stringify({ text, language }),
-        signal: controller.signal,
-      })
-        .then((response) => {
+      /* Fetch the audio, then play it. A failure before playback begins is
+         not reported once the caller has stopped it, since nothing is waiting
+         for it any more. */
+      const fetchAudio = async (): Promise<HTMLAudioElement | null> => {
+        try {
+          const response = await fetch(config.endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'audio/*, */*',
+            },
+            body: JSON.stringify({ text, language }),
+            signal: controller.signal,
+          });
           if (!response.ok) {
             throw new Error(`TTS request failed: ${response.status}`);
           }
-          return response.blob();
-        })
-        .then((blob) => {
-          if (controller.signal.aborted) return;
+          const blob = await response.blob();
+          if (controller.signal.aborted) return null;
           objectUrl = URL.createObjectURL(blob);
-          audio = new Audio(objectUrl);
-          audio.onended = () => {
+          const element = new Audio(objectUrl);
+          audio = element;
+          element.onended = () => {
             cleanup();
             handlers.finished();
           };
-          audio.onerror = () => {
+          element.onerror = () => {
             cleanup();
             handlers.failed();
           };
-          audio
-            .play()
-            .then(() => handlers.started())
-            .catch(() => {
-              cleanup();
-              handlers.failed();
-            });
-        })
-        .catch(() => {
-          if (controller.signal.aborted) return;
+          return element;
+        } catch {
+          if (!controller.signal.aborted) {
+            cleanup();
+            handlers.failed();
+          }
+          return null;
+        }
+      };
+
+      const run = async (): Promise<void> => {
+        const element = await fetchAudio();
+        if (!element) return;
+        try {
+          await element.play();
+          handlers.started();
+        } catch {
           cleanup();
           handlers.failed();
-        });
+        }
+      };
+
+      void run();
 
       return playback;
     },

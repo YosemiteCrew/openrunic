@@ -110,12 +110,7 @@ export function ResultReading({
   providerNamed,
 }: Readonly<ResultReadingProps>): ReactElement {
   const t = useTranslator();
-  const patient = patientNamed(report.patientId);
   const isSigned = report.status === 'SIGNED' || signed !== null;
-  /* A sign-off made here names whoever it recorded; one made elsewhere names
-     the report's own signer. Never the ordering clinician: they asked for the
-     test and may never have seen its result. */
-  const signer = signed === null ? report.signedBy : signed.by;
   /* A report longer than the page the pane reads cannot be read in full here,
      so it cannot be signed here either. */
   const readable = values === 'success' && unshownAnalytes === 0;
@@ -133,84 +128,24 @@ export function ResultReading({
       footer={
         <div className="or-cluster">
           {isSigned ? (
-            <>
-              <Badge tone="neutral" icon="check">
-                {t('results.signedBadge')}
-              </Badge>
-              <span className="or-small">
-                {signed
-                  ? t('results.reading.signedAtBy', {
-                      at: formatDateTime(t, signed.at, 'dense'),
-                      clinician: clinicianName(t, providerNamed, signer),
-                    })
-                  : t('results.reading.signedBy', {
-                      clinician: clinicianName(t, providerNamed, signer),
-                    })}
-              </span>
-            </>
+            <SignedLine report={report} signed={signed} providerNamed={providerNamed} />
           ) : (
-            <>
-              <Button iconLeft="pen-line" onClick={onSign} disabled={!readable}>
-                {t('results.reading.sign')}
-              </Button>
-              {notes ? (
-                <Button
-                  variant="secondary"
-                  iconLeft="message-square"
-                  onClick={onSignWithNote}
-                  disabled={!readable}
-                >
-                  {t('results.reading.signWithNote')}
-                </Button>
-              ) : null}
-              <Button variant="ghost" href="/orders/new" iconLeft="circle-plus">
-                {t('results.reading.followUp')}
-              </Button>
-            </>
+            <SignActions
+              readable={readable}
+              notes={notes}
+              onSign={onSign}
+              onSignWithNote={onSignWithNote}
+            />
           )}
         </div>
       }
     >
-      <div className="or-reading__head">
-        <p className="or-body">
-          {patient ? formatName(patient.name, 'full') : t('results.notRecorded')}
-          {patient ? (
-            <>
-              {' '}
-              {/* The record number keeps its own monospace element, so the
-                  identity line is translated on either side of it rather than
-                  as one message. */}
-              <span className="or-mono">{formatMrn(patient.mrn)}</span>
-              {t('results.reading.born', { birthDate: formatDate(t, patient.birthDate) })}
-            </>
-          ) : null}
-        </p>
-        <div className="or-cluster">
-          <ResultFlagBadge flag={report.flag} />
-          <span className="or-small">
-            {/* Two messages rather than one with an empty slot: a report whose
-                specimen has no collection time has nothing to say about when it
-                was collected, and "Collected  , reported ..." is a sentence
-                about a missing value rather than about the report. */}
-            {report.collectedAt
-              ? t('results.reading.collected', {
-                  collected: formatDateTime(t, report.collectedAt, 'dense'),
-                  reported: formatDateTime(t, report.reportedAt, 'dense'),
-                  performer: report.performer ?? t('results.notRecorded'),
-                })
-              : t('results.reading.reported', {
-                  reported: formatDateTime(t, report.reportedAt, 'dense'),
-                  performer: report.performer ?? t('results.notRecorded'),
-                })}
-          </span>
-        </div>
-        <p className="or-small or-muted">
-          {t('results.reading.orderedBy', {
-            clinician: clinicianName(t, providerNamed, report.orderedBy),
-            today: formatDate(t, now),
-          })}
-        </p>
-      </div>
+      <ReadingHead
+        report={report}
+        now={now}
+        patientNamed={patientNamed}
+        providerNamed={providerNamed}
+      />
 
       {signed?.note ? (
         <div className="or-reading__note">
@@ -240,6 +175,124 @@ export function ResultReading({
         </p>
       ) : null}
     </Card>
+  );
+}
+
+/** Who signed the report, and when if the sign-off was made here. */
+function SignedLine({
+  report,
+  signed,
+  providerNamed,
+}: Readonly<Pick<ResultReadingProps, 'report' | 'signed' | 'providerNamed'>>): ReactElement {
+  const t = useTranslator();
+  /* A sign-off made here names whoever it recorded; one made elsewhere names
+     the report's own signer. Never the ordering clinician: they asked for the
+     test and may never have seen its result. */
+  const signer = signed === null ? report.signedBy : signed.by;
+  return (
+    <>
+      <Badge tone="neutral" icon="check">
+        {t('results.signedBadge')}
+      </Badge>
+      <span className="or-small">
+        {signed
+          ? t('results.reading.signedAtBy', {
+              at: formatDateTime(t, signed.at, 'dense'),
+              clinician: clinicianName(t, providerNamed, signer),
+            })
+          : t('results.reading.signedBy', {
+              clinician: clinicianName(t, providerNamed, signer),
+            })}
+      </span>
+    </>
+  );
+}
+
+/** The sign-off actions, held back until the whole report can be read. */
+function SignActions({
+  readable,
+  notes,
+  onSign,
+  onSignWithNote,
+}: Readonly<
+  Pick<ResultReadingProps, 'notes' | 'onSign' | 'onSignWithNote'> & { readable: boolean }
+>): ReactElement {
+  const t = useTranslator();
+  return (
+    <>
+      <Button iconLeft="pen-line" onClick={onSign} disabled={!readable}>
+        {t('results.reading.sign')}
+      </Button>
+      {notes ? (
+        <Button
+          variant="secondary"
+          iconLeft="message-square"
+          onClick={onSignWithNote}
+          disabled={!readable}
+        >
+          {t('results.reading.signWithNote')}
+        </Button>
+      ) : null}
+      <Button variant="ghost" href="/orders/new" iconLeft="circle-plus">
+        {t('results.reading.followUp')}
+      </Button>
+    </>
+  );
+}
+
+/** Whose report this is, when it was collected and reported, and who asked for it. */
+function ReadingHead({
+  report,
+  now,
+  patientNamed,
+  providerNamed,
+}: Readonly<
+  Pick<ResultReadingProps, 'report' | 'now' | 'patientNamed' | 'providerNamed'>
+>): ReactElement {
+  const t = useTranslator();
+  const patient = patientNamed(report.patientId);
+  const performer = report.performer ?? t('results.notRecorded');
+  return (
+    <div className="or-reading__head">
+      <p className="or-body">
+        {patient ? formatName(patient.name, 'full') : t('results.notRecorded')}
+        {patient ? (
+          <>
+            {' '}
+            {/* The record number keeps its own monospace element, so the
+                identity line is translated on either side of it rather than
+                as one message. */}
+            <span className="or-mono">{formatMrn(patient.mrn)}</span>
+            {t('results.reading.born', { birthDate: formatDate(t, patient.birthDate) })}
+          </>
+        ) : null}
+      </p>
+      <div className="or-cluster">
+        <ResultFlagBadge flag={report.flag} />
+        <span className="or-small">
+          {/* Two messages rather than one with an empty slot: a report whose
+              specimen has no collection time has nothing to say about when it
+              was collected, and "Collected  , reported ..." is a sentence
+              about a missing value rather than about the report. */}
+          {report.collectedAt
+            ? t('results.reading.collected', {
+                collected: formatDateTime(t, report.collectedAt, 'dense'),
+                reported: formatDateTime(t, report.reportedAt, 'dense'),
+                performer,
+              })
+            : t('results.reading.reported', {
+                reported: formatDateTime(t, report.reportedAt, 'dense'),
+                performer,
+              })}
+        </span>
+      </div>
+      <p className="or-small or-muted">
+        {t('results.reading.orderedBy', {
+          clinician: clinicianName(t, providerNamed, report.orderedBy),
+          today: formatDate(t, now),
+        })}
+      </p>
+    </div>
   );
 }
 

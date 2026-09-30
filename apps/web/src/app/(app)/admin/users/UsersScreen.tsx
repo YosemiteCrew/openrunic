@@ -493,6 +493,80 @@ function StaffAccounts({
   );
 }
 
+/** The warning above the list: active accounts that have not enrolled in MFA. */
+function MfaNotice({ unenrolled }: Readonly<{ unenrolled: number }>): ReactElement | null {
+  const t = useTranslator();
+
+  if (unenrolled === 0) return null;
+  return (
+    <Card className="or-notice" data-tone="serious">
+      <p className="or-body">
+        <strong>
+          {t('admin.users.mfaNotice.title', { count: formatCount(unenrolled, t.locale) })}
+        </strong>{' '}
+        {t('admin.users.mfaNotice.body')}
+      </p>
+    </Card>
+  );
+}
+
+/** One account, open whenever a user row is selected. */
+function UserDrawer({
+  user,
+  permissions,
+  grants,
+  onClose,
+}: Readonly<{
+  user: StaffUser | null;
+  permissions: PermissionRow[] | null;
+  grants: Record<string, boolean>;
+  onClose: () => void;
+}>): ReactElement {
+  const t = useTranslator();
+  const roleSummary =
+    user && permissions
+      ? summariseRole(t, permissions, user.roles[0] ?? 'READ_ONLY', grants)
+      : t('admin.users.roles.summaryLoading');
+
+  return (
+    <Drawer
+      open={user !== null}
+      title={user?.name ?? ''}
+      description={user?.email}
+      onClose={onClose}
+      meta={
+        user ? (
+          <Badge tone={STATUS_TONE[user.status]}>{t(STATUS_KEY[user.status].labelKey)}</Badge>
+        ) : null
+      }
+      footer={
+        user ? (
+          <>
+            <Button variant="ghost" onClick={onClose}>
+              {t('admin.action.close')}
+            </Button>
+            {/* Disabled unconditionally, not only for an account already
+                marked deactivated. There is no endpoint behind this: it used
+                to write the id into local state and report the account
+                closed, so somebody withdrawing a colleague's access was told
+                it had been withdrawn by a screen that had asked nobody. */}
+            <Button variant="danger" disabled>
+              {t('admin.users.deactivate')}
+            </Button>
+          </>
+        ) : null
+      }
+    >
+      {user ? (
+        <div className="or-stack">
+          <Demonstration message={t('admin.users.deactivateNotBuilt')} />
+          <UserDetail user={user} roleSummary={roleSummary} />
+        </div>
+      ) : null}
+    </Drawer>
+  );
+}
+
 export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElement {
   const t = useTranslator();
   const options = useAdminClientOption(client);
@@ -593,16 +667,7 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
     >
       <ScreenCommands commands={commands} />
 
-      {unenrolled > 0 ? (
-        <Card className="or-notice" data-tone="serious">
-          <p className="or-body">
-            <strong>
-              {t('admin.users.mfaNotice.title', { count: formatCount(unenrolled, t.locale) })}
-            </strong>{' '}
-            {t('admin.users.mfaNotice.body')}
-          </p>
-        </Card>
-      ) : null}
+      <MfaNotice unenrolled={unenrolled} />
 
       <StaffAccounts
         users={users}
@@ -620,50 +685,12 @@ export function UsersScreen({ client }: Readonly<UsersScreenProps>): ReactElemen
       />
 
       {/* ---- One account ---------------------------------------------- */}
-      <Drawer
-        open={selected !== null}
-        title={selected?.name ?? ''}
-        description={selected?.email}
+      <UserDrawer
+        user={selected}
+        permissions={permissions.data ?? null}
+        grants={grants}
         onClose={closeDrawer}
-        meta={
-          selected ? (
-            <Badge tone={STATUS_TONE[selected.status]}>
-              {t(STATUS_KEY[selected.status].labelKey)}
-            </Badge>
-          ) : null
-        }
-        footer={
-          selected ? (
-            <>
-              <Button variant="ghost" onClick={closeDrawer}>
-                {t('admin.action.close')}
-              </Button>
-              {/* Disabled unconditionally, not only for an account already
-                  marked deactivated. There is no endpoint behind this: it used
-                  to write the id into local state and report the account
-                  closed, so somebody withdrawing a colleague's access was told
-                  it had been withdrawn by a screen that had asked nobody. */}
-              <Button variant="danger" disabled>
-                {t('admin.users.deactivate')}
-              </Button>
-            </>
-          ) : null
-        }
-      >
-        {selected ? (
-          <div className="or-stack">
-            <Demonstration message={t('admin.users.deactivateNotBuilt')} />
-            <UserDetail
-              user={selected}
-              roleSummary={
-                permissions.data
-                  ? summariseRole(t, permissions.data, selected.roles[0] ?? 'READ_ONLY', grants)
-                  : t('admin.users.roles.summaryLoading')
-              }
-            />
-          </div>
-        ) : null}
-      </Drawer>
+      />
 
       {/* ---- Invite ---------------------------------------------------- */}
       <Drawer

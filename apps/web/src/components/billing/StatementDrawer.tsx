@@ -76,147 +76,184 @@ export function StatementDrawer({
   onTextToPay,
   texted,
 }: Readonly<StatementDrawerProps>): ReactElement | null {
-  const t = useTranslator();
-
   if (!open || accounts.length === 0) return null;
 
   const single = accounts.length === 1 ? accounts[0] : null;
 
   if (single) {
-    const totals = statementTotals(single.lines);
-    const rows = single.lines.map((line): Record<string, ReactNode> => ({
-      id: line.id,
-      serviceDate: formatDate(t, line.serviceDate),
-      description: line.description,
-      charges: <Money amount={line.charges} currency={single.currency} />,
-      insurancePaid: <Money amount={line.insurancePaid} currency={single.currency} />,
-      adjustments: <Money amount={line.adjustments} currency={single.currency} />,
-      outstanding: <Money amount={line.outstanding} currency={single.currency} />,
-    }));
-
     return (
-      <Drawer
-        open
-        title={t('billing.statementDrawer.title', { name: formatName(single.patient.name) })}
-        subtitle={
-          <>
-            <span className="or-mono">{formatMrn(single.patient.mrn)}</span>
-            {', '}
-            {t('billing.statementDrawer.subtitle', {
-              stage: t(DUNNING_LABEL_KEYS[single.dunningStage]).toLowerCase(),
-              sent: formatCount(single.statementsSent, t.locale),
-            })}
-          </>
-        }
+      <SingleStatement
+        account={single}
         onClose={onClose}
-        footer={
-          <>
-            <Button
-              variant="secondary"
-              iconLeft="smartphone"
-              disabled={single.mobile === null || texted.has(single.id)}
-              onClick={() => onTextToPay(single)}
-            >
-              {texted.has(single.id)
-                ? t('billing.statementDrawer.linkSent')
-                : t('billing.statementDrawer.sendLink')}
-            </Button>
-            <Button iconLeft="mail" onClick={() => onSend([single])}>
-              {t('billing.statementDrawer.send')}
-            </Button>
-          </>
-        }
-      >
-        <div className="or-statement">
-          <p className="or-body-lg or-statement__sentence">
-            {t('billing.statementDrawer.sentence', {
-              insurance: formatMoney(t, totals.insurancePaid, { currency: single.currency }).text,
-              share: formatMoney(t, totals.outstanding, { currency: single.currency }).text,
-            })}
-          </p>
-
-          <Table
-            caption={t('billing.statementDrawer.linesCaption')}
-            columns={translateColumns(LEDGER_COLUMNS, t)}
-            rows={rows}
-          />
-
-          <dl className="or-totals">
-            <div className="or-totals__row">
-              <dt>{t('billing.statementDrawer.totals.charges')}</dt>
-              <dd>
-                <Money amount={totals.charges} currency={single.currency} />
-              </dd>
-            </div>
-            <div className="or-totals__row">
-              <dt>{t('billing.statementDrawer.totals.insurancePaid')}</dt>
-              <dd>
-                <Money amount={totals.insurancePaid} currency={single.currency} />
-              </dd>
-            </div>
-            <div className="or-totals__row">
-              <dt>{t('billing.statementDrawer.totals.balanceDue')}</dt>
-              <dd>
-                <Money amount={totals.outstanding} currency={single.currency} emphasis />
-              </dd>
-            </div>
-          </dl>
-
-          <section aria-labelledby="statement-collection">
-            <h3 id="statement-collection" className="or-h3">
-              {t('billing.statementDrawer.collection')}
-            </h3>
-            <ul className="or-fact-list">
-              <li>
-                <span className="or-fact-list__term">{t('billing.statementDrawer.mobile')}</span>
-                <span>{single.mobile ?? t('common.notRecorded')}</span>
-                {texted.has(single.id) ? (
-                  <Badge tone="success">{t('billing.statementDrawer.linkSent')}</Badge>
-                ) : null}
-              </li>
-              <li>
-                <span className="or-fact-list__term">
-                  {t('billing.statementDrawer.cardOnFile')}
-                </span>
-                <span>
-                  {single.cardOnFile
-                    ? t('billing.statementDrawer.cardConsent')
-                    : t('billing.statementDrawer.noCard')}
-                </span>
-              </li>
-              <li>
-                <span className="or-fact-list__term">
-                  {t('billing.statementDrawer.paymentPlan')}
-                </span>
-                <span>
-                  {single.paymentPlan
-                    ? t('billing.statementDrawer.plan', {
-                        amount: formatMoney(t, single.paymentPlan.instalmentAmount, {
-                          currency: single.currency,
-                        }).text,
-                        paid: formatCount(single.paymentPlan.instalmentsPaid, t.locale),
-                        total: formatCount(single.paymentPlan.instalmentsTotal, t.locale),
-                      })
-                    : t('billing.statementDrawer.noPlan')}
-                </span>
-              </li>
-              <li>
-                <span className="or-fact-list__term">
-                  {t('billing.statementDrawer.lastStatement')}
-                </span>
-                <span>
-                  {single.lastStatementAt
-                    ? formatDate(t, single.lastStatementAt)
-                    : t('billing.statementDrawer.noneSent')}
-                </span>
-              </li>
-            </ul>
-          </section>
-        </div>
-      </Drawer>
+        onSend={onSend}
+        onTextToPay={onTextToPay}
+        texted={texted}
+      />
     );
   }
 
+  return <StatementRun accounts={accounts} onClose={onClose} onSend={onSend} />;
+}
+
+type SingleStatementProps = Readonly<
+  Pick<StatementDrawerProps, 'onClose' | 'onSend' | 'onTextToPay' | 'texted'> & {
+    account: StatementAccount;
+  }
+>;
+
+/** One account: a real statement, with the two ways to collect it. */
+function SingleStatement({
+  account: single,
+  onClose,
+  onSend,
+  onTextToPay,
+  texted,
+}: SingleStatementProps): ReactElement {
+  const t = useTranslator();
+  const totals = statementTotals(single.lines);
+  const rows = single.lines.map((line): Record<string, ReactNode> => ({
+    id: line.id,
+    serviceDate: formatDate(t, line.serviceDate),
+    description: line.description,
+    charges: <Money amount={line.charges} currency={single.currency} />,
+    insurancePaid: <Money amount={line.insurancePaid} currency={single.currency} />,
+    adjustments: <Money amount={line.adjustments} currency={single.currency} />,
+    outstanding: <Money amount={line.outstanding} currency={single.currency} />,
+  }));
+
+  return (
+    <Drawer
+      open
+      title={t('billing.statementDrawer.title', { name: formatName(single.patient.name) })}
+      subtitle={
+        <>
+          <span className="or-mono">{formatMrn(single.patient.mrn)}</span>
+          {', '}
+          {t('billing.statementDrawer.subtitle', {
+            stage: t(DUNNING_LABEL_KEYS[single.dunningStage]).toLowerCase(),
+            sent: formatCount(single.statementsSent, t.locale),
+          })}
+        </>
+      }
+      onClose={onClose}
+      footer={
+        <>
+          <Button
+            variant="secondary"
+            iconLeft="smartphone"
+            disabled={single.mobile === null || texted.has(single.id)}
+            onClick={() => onTextToPay(single)}
+          >
+            {texted.has(single.id)
+              ? t('billing.statementDrawer.linkSent')
+              : t('billing.statementDrawer.sendLink')}
+          </Button>
+          <Button iconLeft="mail" onClick={() => onSend([single])}>
+            {t('billing.statementDrawer.send')}
+          </Button>
+        </>
+      }
+    >
+      <div className="or-statement">
+        <p className="or-body-lg or-statement__sentence">
+          {t('billing.statementDrawer.sentence', {
+            insurance: formatMoney(t, totals.insurancePaid, { currency: single.currency }).text,
+            share: formatMoney(t, totals.outstanding, { currency: single.currency }).text,
+          })}
+        </p>
+
+        <Table
+          caption={t('billing.statementDrawer.linesCaption')}
+          columns={translateColumns(LEDGER_COLUMNS, t)}
+          rows={rows}
+        />
+
+        <dl className="or-totals">
+          <div className="or-totals__row">
+            <dt>{t('billing.statementDrawer.totals.charges')}</dt>
+            <dd>
+              <Money amount={totals.charges} currency={single.currency} />
+            </dd>
+          </div>
+          <div className="or-totals__row">
+            <dt>{t('billing.statementDrawer.totals.insurancePaid')}</dt>
+            <dd>
+              <Money amount={totals.insurancePaid} currency={single.currency} />
+            </dd>
+          </div>
+          <div className="or-totals__row">
+            <dt>{t('billing.statementDrawer.totals.balanceDue')}</dt>
+            <dd>
+              <Money amount={totals.outstanding} currency={single.currency} emphasis />
+            </dd>
+          </div>
+        </dl>
+
+        <CollectionFacts account={single} texted={texted.has(single.id)} />
+      </div>
+    </Drawer>
+  );
+}
+
+/** How this account can be collected: mobile, card, plan and last statement. */
+function CollectionFacts({
+  account: single,
+  texted,
+}: Readonly<{ account: StatementAccount; texted: boolean }>): ReactElement {
+  const t = useTranslator();
+  return (
+    <section aria-labelledby="statement-collection">
+      <h3 id="statement-collection" className="or-h3">
+        {t('billing.statementDrawer.collection')}
+      </h3>
+      <ul className="or-fact-list">
+        <li>
+          <span className="or-fact-list__term">{t('billing.statementDrawer.mobile')}</span>
+          <span>{single.mobile ?? t('common.notRecorded')}</span>
+          {texted ? <Badge tone="success">{t('billing.statementDrawer.linkSent')}</Badge> : null}
+        </li>
+        <li>
+          <span className="or-fact-list__term">{t('billing.statementDrawer.cardOnFile')}</span>
+          <span>
+            {single.cardOnFile
+              ? t('billing.statementDrawer.cardConsent')
+              : t('billing.statementDrawer.noCard')}
+          </span>
+        </li>
+        <li>
+          <span className="or-fact-list__term">{t('billing.statementDrawer.paymentPlan')}</span>
+          <span>
+            {single.paymentPlan
+              ? t('billing.statementDrawer.plan', {
+                  amount: formatMoney(t, single.paymentPlan.instalmentAmount, {
+                    currency: single.currency,
+                  }).text,
+                  paid: formatCount(single.paymentPlan.instalmentsPaid, t.locale),
+                  total: formatCount(single.paymentPlan.instalmentsTotal, t.locale),
+                })
+              : t('billing.statementDrawer.noPlan')}
+          </span>
+        </li>
+        <li>
+          <span className="or-fact-list__term">{t('billing.statementDrawer.lastStatement')}</span>
+          <span>
+            {single.lastStatementAt
+              ? formatDate(t, single.lastStatementAt)
+              : t('billing.statementDrawer.noneSent')}
+          </span>
+        </li>
+      </ul>
+    </section>
+  );
+}
+
+/** Several accounts: the same preview at batch scale, with each escalation. */
+function StatementRun({
+  accounts,
+  onClose,
+  onSend,
+}: Readonly<Pick<StatementDrawerProps, 'accounts' | 'onClose' | 'onSend'>>): ReactElement {
+  const t = useTranslator();
   const total = accounts.reduce((sum, account) => sum + account.balance, 0);
   const rows = accounts.map((account): Record<string, ReactNode> => ({
     id: account.id,

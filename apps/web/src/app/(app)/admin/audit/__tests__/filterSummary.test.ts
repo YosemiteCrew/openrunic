@@ -1,7 +1,7 @@
 import { appCatalogue, createTranslator } from '@openrunic/i18n';
 import { describe, expect, it } from 'vitest';
 
-import { filterSummary } from '@/app/(app)/admin/audit/AuditScreen';
+import { filterSummary } from '@/app/(app)/admin/audit/filterSummary';
 
 /**
  * `ar-EG` is not a locale this build offers a reader, and it is here for the one

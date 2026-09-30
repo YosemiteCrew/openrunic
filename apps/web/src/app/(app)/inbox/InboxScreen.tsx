@@ -26,7 +26,7 @@ import {
   usePatientNames,
   worklist,
 } from '@/lib/api';
-import type { Assignment, InboxItem, InboxStream, WorklistClient } from '@/lib/api';
+import type { Assignment, InboxItem, InboxPage, InboxStream, WorklistClient } from '@/lib/api';
 import { clinicNow } from '@/lib/api/chart';
 
 import { counted } from '@/lib/i18n/counted';
@@ -323,51 +323,56 @@ function useInboxCommands(
   );
 }
 
-export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps>): ReactElement {
+interface InboxWindow {
+  page: InboxPage['page'] | null;
+  refused: number;
+  windowed: number | null;
+  truncated: boolean;
+}
+
+/* Read off the page rather than off `visible`, which the stream chips and the
+   completed rows have already narrowed: the two absences below are facts
+   about what the ROUTE answered, and folding them into the filtered count
+   would make them disappear the moment somebody picked a stream. */
+function inboxWindow(data: InboxPage | null): InboxWindow {
+  const page = data?.page ?? null;
+  const refused = data?.refused ?? 0;
+  const windowed = data ? data.data.length + refused : null;
+  /* The streams are filtered in the browser from one page, so a stream with
+     nothing on a page that is not the whole inbox has nothing HERE, which is
+     not the same as nothing waiting. */
+  const truncated = windowed !== null && page !== null && windowed < page.total;
+  return { page, refused, windowed, truncated };
+}
+
+/** The empty state's words: for one stream, or for the whole inbox. */
+function inboxEmptyWords(
+  t: ReturnType<typeof useTranslator>,
+  stream: InboxStream | null,
+  truncated: boolean
+): { title: string; message: string } {
+  if (!stream) return { title: t('inbox.empty.allTitle'), message: t('inbox.empty.allMessage') };
+  return {
+    title: t(truncated ? 'inbox.empty.streamPageTitle' : 'inbox.empty.streamTitle', {
+      stream: t(INBOX_STREAM_INLINE_KEYS[stream]),
+    }),
+    message: t(truncated ? 'inbox.empty.streamPageMessage' : 'inbox.empty.streamMessage'),
+  };
+}
+
+/**
+ * The dispositions made on this screen - complete, reply, claim, undo - and
+ * what the clinician is told about each.
+ */
+function useInboxDispositions(writer: WorklistClient) {
   const t = useTranslator();
-  const [now] = useState(() => fixedNow ?? clinicNow());
-  /* Writes go through the client the reads came from; in live mode the
-     module-level one, since a disposition names its actor from the credential
-     and does not wait for `/bff/v0/me`. */
-  const writer = client ?? worklist;
-  const { claim: recordClaim, reopen: recordReopen, reply: recordReply } = writer.inbox;
+  const { reply: recordReply } = writer.inbox;
   /* A row whose disposition was refused, so the toast can say it is still open. */
   const [refusal, setRefusal] = useState<InboxItem | null>(null);
-  const [stream, setStream] = useState<InboxStream | null>(null);
-  const [assignment, setAssignment] = useState<Assignment | ''>('');
   const [doneIds, setDoneIds] = useState<string[]>([]);
   const [claimedIds, setClaimedIds] = useState<string[]>([]);
   const [completion, setCompletion] = useState<Completion | null>(null);
   const [reply, setReply] = useState<ReplyState | null>(null);
-
-  const inbox = useInbox(assignment ? { assignedTo: assignment } : {}, { client });
-
-  const loaded = useMemo(() => inbox.data?.data ?? [], [inbox.data]);
-  const done = new Set(doneIds);
-
-  /* Off the PAGE rather than off `visible`: the stream chips and the completed
-     rows narrow what is rendered, not what was read, and keying the name read
-     on the filtered set would refetch the same patients every time somebody
-     picked a stream. */
-  const patientNamed = usePatientNames(loaded.map((item) => item.patientId));
-
-  /* Overdue first, then due soonest: the queue orders itself by what will hurt.
-     Completed rows leave the list, and the toast holds the undo. */
-  const visible = useMemo(() => {
-    const rank = { OVERDUE: 0, DUE_SOON: 1, ON_TIME: 2 } as const;
-    const completed = new Set(doneIds);
-    const open = loaded.filter(
-      (item) => !completed.has(item.id) && (!stream || item.stream === stream)
-    );
-    /* A task with no due date is not the most urgent one, so it sorts last -
-       the same decision the route's own comparator makes, so the two orderings
-       do not disagree about the top of the queue. */
-    return open.sort(
-      (a, b) =>
-        rank[slaState(a.dueAt, now)] - rank[slaState(b.dueAt, now)] ||
-        (a.dueAt ?? '\uffff').localeCompare(b.dueAt ?? '\uffff')
-    );
-  }, [loaded, doneIds, stream, now]);
 
   /* A row leaves the list once the client says its disposition was recorded,
      and not before: a row that vanished over a refusal would read as done. */
@@ -460,27 +465,128 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
 
   const busy = completing.pending || claiming.pending || reopening.pending || replying.pending;
 
+  return {
+    refusal,
+    setRefusal,
+    doneIds,
+    claimedIds,
+    completion,
+    setCompletion,
+    reply,
+    setReply,
+    complete,
+    sendReply,
+    undo,
+    claim,
+    replyPending: replying.pending,
+    busy,
+  };
+}
+
+/**
+ * What the clinician is told after a disposition: the undo toast, the reply
+ * dialog for a message, and the refusal that says a row is still open.
+ */
+function InboxNotices({
+  dispositions,
+  recordReopen,
+  busy,
+}: Readonly<{
+  dispositions: ReturnType<typeof useInboxDispositions>;
+  recordReopen: WorklistClient['inbox']['reopen'];
+  busy: boolean;
+}>): ReactElement {
+  const t = useTranslator();
+  const { completion, reply, refusal, undo, sendReply, setCompletion, setReply, setRefusal } =
+    dispositions;
+  return (
+    <>
+      {completion ? (
+        <CompletionToast
+          completion={completion}
+          busy={busy}
+          undoLabel={t('inbox.list.undo')}
+          onUndo={recordReopen === null ? undefined : () => void undo(recordReopen)}
+          onClose={() => setCompletion(null)}
+        />
+      ) : null}
+
+      {reply ? (
+        <ReplyModal
+          state={reply}
+          title={t('inbox.reply.title', { patient: reply.item.summary })}
+          description={t('inbox.reply.description')}
+          label={t('inbox.reply.label')}
+          placeholder={t('inbox.reply.placeholder')}
+          sendLabel={t('inbox.reply.send')}
+          cancelLabel={t('inbox.reply.cancel')}
+          pending={dispositions.replyPending}
+          onBodyChange={(body) => setReply({ ...reply, body })}
+          onCancel={() => setReply(null)}
+          onSend={() => void sendReply()}
+        />
+      ) : null}
+
+      {refusal ? (
+        <div className="or-toast-dock">
+          <Toast
+            tone="danger"
+            title={t('inbox.list.notRecorded')}
+            message={refusal.summary}
+            onClose={() => setRefusal(null)}
+          />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps>): ReactElement {
+  const t = useTranslator();
+  const [now] = useState(() => fixedNow ?? clinicNow());
+  /* Writes go through the client the reads came from; in live mode the
+     module-level one, since a disposition names its actor from the credential
+     and does not wait for `/bff/v0/me`. */
+  const writer = client ?? worklist;
+  const { claim: recordClaim, reopen: recordReopen } = writer.inbox;
+  const [stream, setStream] = useState<InboxStream | null>(null);
+  const [assignment, setAssignment] = useState<Assignment | ''>('');
+  const dispositions = useInboxDispositions(writer);
+  const { doneIds, claimedIds, busy, complete, claim } = dispositions;
+
+  const inbox = useInbox(assignment ? { assignedTo: assignment } : {}, { client });
+
+  const loaded = useMemo(() => inbox.data?.data ?? [], [inbox.data]);
+  const done = new Set(doneIds);
+
+  /* Off the PAGE rather than off `visible`: the stream chips and the completed
+     rows narrow what is rendered, not what was read, and keying the name read
+     on the filtered set would refetch the same patients every time somebody
+     picked a stream. */
+  const patientNamed = usePatientNames(loaded.map((item) => item.patientId));
+
+  /* Overdue first, then due soonest: the queue orders itself by what will hurt.
+     Completed rows leave the list, and the toast holds the undo. */
+  const visible = useMemo(() => {
+    const rank = { OVERDUE: 0, DUE_SOON: 1, ON_TIME: 2 } as const;
+    const completed = new Set(doneIds);
+    const open = loaded.filter(
+      (item) => !completed.has(item.id) && (!stream || item.stream === stream)
+    );
+    /* A task with no due date is not the most urgent one, so it sorts last -
+       the same decision the route's own comparator makes, so the two orderings
+       do not disagree about the top of the queue. */
+    return open.sort(
+      (a, b) =>
+        rank[slaState(a.dueAt, now)] - rank[slaState(b.dueAt, now)] ||
+        (a.dueAt ?? '\uffff').localeCompare(b.dueAt ?? '\uffff')
+    );
+  }, [loaded, doneIds, stream, now]);
+
   const commands = useInboxCommands(setStream, setAssignment);
 
-  /* Read off the page rather than off `visible`, which the stream chips and the
-     completed rows have already narrowed: the two absences below are facts
-     about what the ROUTE answered, and folding them into the filtered count
-     would make them disappear the moment somebody picked a stream. */
-  const page = inbox.data?.page ?? null;
-  const refused = inbox.data?.refused ?? 0;
-  const windowed = inbox.data ? inbox.data.data.length + refused : null;
-
-  /* The streams are filtered in the browser from one page, so a stream with
-     nothing on a page that is not the whole inbox has nothing HERE, which is
-     not the same as nothing waiting. */
-  const truncated = windowed !== null && page !== null && windowed < page.total;
-  const streamEmptyTitle = (chosen: InboxStream): string =>
-    t(truncated ? 'inbox.empty.streamPageTitle' : 'inbox.empty.streamTitle', {
-      stream: t(INBOX_STREAM_INLINE_KEYS[chosen]),
-    });
-  const streamEmptyMessage = t(
-    truncated ? 'inbox.empty.streamPageMessage' : 'inbox.empty.streamMessage'
-  );
+  const { page, refused, windowed, truncated } = inboxWindow(inbox.data);
+  const emptyWords = inboxEmptyWords(t, stream, truncated);
 
   const overdue = visible.filter((item) => slaState(item.dueAt, now) === 'OVERDUE');
   /* The instant rather than the item: an item with no due date is never
@@ -539,8 +645,8 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
           isEmpty={() => visible.length === 0}
           loadingRows={6}
           empty={{
-            title: stream ? streamEmptyTitle(stream) : t('inbox.empty.allTitle'),
-            message: stream ? streamEmptyMessage : t('inbox.empty.allMessage'),
+            title: emptyWords.title,
+            message: emptyWords.message,
             icon: 'inbox',
             action: (
               <Button href="/schedule" iconLeft="calendar-days">
@@ -564,42 +670,7 @@ export function InboxScreen({ client, now: fixedNow }: Readonly<InboxScreenProps
         </AsyncBoundary>
       </Card>
 
-      {completion ? (
-        <CompletionToast
-          completion={completion}
-          busy={busy}
-          undoLabel={t('inbox.list.undo')}
-          onUndo={recordReopen === null ? undefined : () => void undo(recordReopen)}
-          onClose={() => setCompletion(null)}
-        />
-      ) : null}
-
-      {reply ? (
-        <ReplyModal
-          state={reply}
-          title={t('inbox.reply.title', { patient: reply.item.summary })}
-          description={t('inbox.reply.description')}
-          label={t('inbox.reply.label')}
-          placeholder={t('inbox.reply.placeholder')}
-          sendLabel={t('inbox.reply.send')}
-          cancelLabel={t('inbox.reply.cancel')}
-          pending={replying.pending}
-          onBodyChange={(body) => setReply({ ...reply, body })}
-          onCancel={() => setReply(null)}
-          onSend={() => void sendReply()}
-        />
-      ) : null}
-
-      {refusal ? (
-        <div className="or-toast-dock">
-          <Toast
-            tone="danger"
-            title={t('inbox.list.notRecorded')}
-            message={refusal.summary}
-            onClose={() => setRefusal(null)}
-          />
-        </div>
-      ) : null}
+      <InboxNotices dispositions={dispositions} recordReopen={recordReopen} busy={busy} />
     </AppShell>
   );
 }

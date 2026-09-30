@@ -1107,6 +1107,8 @@ export interface ImmunisationListQuery extends BaseQuery {
   patientId?: string;
   encounterId?: string;
   cvxCode?: string;
+  /** True selects the doses reported to the registry, false the registry queue. */
+  reported?: boolean;
   /** Inclusive lower bound on `administeredAt`. */
   from?: Date;
   /** Exclusive upper bound on `administeredAt`. */
@@ -1184,6 +1186,9 @@ export const immunisationSpec: CollectionSpec<
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (query.encounterId !== undefined && row.encounterId !== query.encounterId) return false;
     if (query.cvxCode !== undefined && row.cvxCode !== query.cvxCode) return false;
+    if (query.reported !== undefined && (row.reportedToRegistryAt !== null) !== query.reported) {
+      return false;
+    }
     return inWindow(row.administeredAt, query.from, query.to);
   },
 
@@ -1193,6 +1198,9 @@ export const immunisationSpec: CollectionSpec<
       ...(query.patientId === undefined ? {} : { patientId: query.patientId }),
       ...(query.encounterId === undefined ? {} : { encounterId: query.encounterId }),
       ...(query.cvxCode === undefined ? {} : { cvxCode: query.cvxCode }),
+      ...(query.reported === undefined
+        ? {}
+        : { reportedToRegistryAt: query.reported ? { not: null } : null }),
       ...(administeredAt === undefined ? {} : { administeredAt }),
     };
   },

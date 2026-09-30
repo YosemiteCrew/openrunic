@@ -194,6 +194,27 @@ describe('what is still outstanding', () => {
 
     expect(body.items[0]?.administeredAt).toBe('2024-01-05T00:00:00.000Z');
   });
+
+  /**
+   * The queue is capped at a page. Once the oldest page of doses has all been
+   * reported, a newer dose that never was still has to surface, so the cap
+   * applies to what is outstanding rather than to every dose given.
+   */
+  it('lists an unreported dose behind a full page of reported ones', async () => {
+    const { app, dataset } = harness();
+    for (let n = 0; n < 201; n += 1) {
+      seedDose(dataset, {
+        ...storageColumns(testId(1000 + n)),
+        administeredAt: new Date(Date.UTC(2024, 0, 1, 0, n)),
+        reportedToRegistryAt: new Date('2025-01-01T00:00:00.000Z'),
+      });
+    }
+
+    const body = await pending(app);
+
+    expect(body.total).toBe(1);
+    expect(body.items[0]?.id).toBe(DOSE);
+  });
 });
 
 describe('building the message', () => {

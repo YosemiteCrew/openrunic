@@ -229,6 +229,8 @@ const FILTERS: {
     patientId: 'id-patientId',
     encounterId: 'id-encounterId',
     cvxCode: 'id-cvxCode',
+    // The registry queue's own filter: a dose with no report stamp.
+    reported: false,
     from: new Date('2026-08-01T00:00:00.000Z'),
     to: new Date('2026-09-01T00:00:00.000Z'),
   },
@@ -1461,6 +1463,33 @@ describe('a patient id filter that names two different things', () => {
     expect(COLLECTION_SPECS.patients.matches(wanted as never, query)).toBe(true);
     expect(matchesWhere(wanted, where)).toBe(true);
     expect(COLLECTION_SPECS.patients.matches(other as never, query)).toBe(false);
+    expect(matchesWhere(other, where)).toBe(false);
+  });
+});
+
+/**
+ * The registry stamp filter, both ways round.
+ *
+ * `FILTERS` sends `reported: false`, the value the registry queue asks for, so
+ * the other value would otherwise be driven by nothing. Each value has to select
+ * exactly one of a stamped and an unstamped dose, through both ports.
+ */
+describe('an immunisation filter on the registry stamp', () => {
+  const base = { page: 1, pageSize: 25, sort: 'administeredAt', order: 'asc' } as const;
+  const administeredAt = new Date('2026-08-10T00:00:00.000Z');
+  const stamped = { administeredAt, reportedToRegistryAt: new Date('2026-08-11T00:00:00.000Z') };
+  const unstamped = { administeredAt, reportedToRegistryAt: null };
+
+  it.each([
+    [false, unstamped, stamped],
+    [true, stamped, unstamped],
+  ])('reported=%s selects one dose and not the other', (reported, wanted, other) => {
+    const query = { ...base, reported };
+    const where = COLLECTION_SPECS.immunisations.where(query);
+
+    expect(COLLECTION_SPECS.immunisations.matches(wanted as never, query)).toBe(true);
+    expect(matchesWhere(wanted, where)).toBe(true);
+    expect(COLLECTION_SPECS.immunisations.matches(other as never, query)).toBe(false);
     expect(matchesWhere(other, where)).toBe(false);
   });
 });

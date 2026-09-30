@@ -18,6 +18,7 @@ import {
   tenantClientSatisfiesPort,
   type DbPort,
   type DbTransaction,
+  type ModelDelegate,
 } from '../repositories/db-port.js';
 import { createEmptyDataset, type MemoryDataset } from '../repositories/memory.js';
 import { createPrismaCollection, createPrismaRepositoryRegistry } from '../repositories/prisma.js';
@@ -584,6 +585,136 @@ describe('composite writes', () => {
       /to amend/u
     );
     expect(h.dataset.table('Patient')[0]?.familyName).toBe('Before');
+  });
+});
+
+describe('composite writes share one connection', () => {
+  /**
+   * The port, with every statement inside a transaction held open for a timer
+   * tick, counting the most it ever had in flight at once. A Prisma interactive
+   * transaction is one connection, and two statements handed to it together is
+   * the defect this watches for; the plain fake resolves every call at once, so
+   * it would never see one.
+   */
+  function watched(port: FakePort): { port: DbPort; peak: () => number } {
+    let inFlight = 0;
+    let peak = 0;
+    const hold = async <T>(run: () => Promise<T>): Promise<T> => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        return await run();
+      } finally {
+        inFlight -= 1;
+      }
+    };
+    const held = <M extends PrismaModelName>(delegate: ModelDelegate<M>): ModelDelegate<M> => ({
+      findMany: (args) => hold(() => delegate.findMany(args)),
+      count: (args) => hold(() => delegate.count(args)),
+      findFirst: (args) => hold(() => delegate.findFirst(args)),
+      create: (args) => hold(() => delegate.create(args)),
+      updateMany: (args) => hold(() => delegate.updateMany(args)),
+    });
+    return {
+      peak: () => peak,
+      port: {
+        model: port.model,
+        auditEvent: port.auditEvent,
+        $transaction: (fn) =>
+          port.$transaction((tx) =>
+            fn({ ...tx, model: <M extends PrismaModelName>(name: M) => held(tx.model(name)) })
+          ),
+      },
+    };
+  }
+
+  /** Two batches of child rows and the amendments given, over the minimal composite spec. */
+  function manyChildrenSpec(amends: readonly string[]): ReturnType<typeof childBearingSpec> {
+    const base = childBearingSpec();
+    return {
+      ...base,
+      childRows(input, parent, context) {
+        const row = (n: number) => ({
+          id: testId(50 + n),
+          claimId: parent.id,
+          status: 'DRAFT' as const,
+          occurredAt: context.now,
+          source: 'system',
+          detail: { note: input.note },
+          byUserId: null,
+        });
+        return [
+          childBatch('ClaimStatusHistory', [row(1), row(2), row(3)]),
+          childBatch('ClaimStatusHistory', [row(4), row(5)]),
+        ];
+      },
+      childPatches(input) {
+        return amends.map((id) => childPatch('Patient', id, { familyName: input.note }));
+      },
+    };
+  }
+
+  /** The child writes the port was asked for, in the order it was asked. */
+  function childTrail(port: FakePort): string[] {
+    return port.calls.flatMap((call) => {
+      if (call.model === 'ClaimStatusHistory' && call.operation === 'create') {
+        return [`row ${(call.args as { data: { id: string } }).data.id}`];
+      }
+      if (call.model === 'Patient' && call.operation === 'updateMany') {
+        return [`amend ${JSON.stringify((call.args as { where: unknown }).where)}`];
+      }
+      return [];
+    });
+  }
+
+  it('writes every child row and amendment one at a time, in order', async () => {
+    const h = harness();
+    h.dataset
+      .table('Patient')
+      .push(makePatientRow({ id: testId(1) }), makePatientRow({ id: testId(2) }));
+    const slow = watched(h.port);
+    const collection = createPrismaCollection(
+      manyChildrenSpec([testId(1), testId(2)]),
+      slow.port,
+      h.scope
+    );
+
+    await collection.create({ note: 'Amended' });
+
+    expect(childTrail(h.port)).toEqual([
+      `row ${testId(51)}`,
+      `row ${testId(52)}`,
+      `row ${testId(53)}`,
+      `row ${testId(54)}`,
+      `row ${testId(55)}`,
+      `amend ${JSON.stringify({ id: { equals: testId(1) } })}`,
+      `amend ${JSON.stringify({ id: { equals: testId(2) } })}`,
+    ]);
+    expect(h.dataset.table('Patient').map((row) => row.familyName)).toEqual(['Amended', 'Amended']);
+    expect(h.port.transactions).toBe(1);
+    // The premise: statements really were held open, so two issued together
+    // would have been seen together.
+    expect(slow.peak()).toBe(1);
+  });
+
+  it('stops at the first refused amendment and issues nothing after it', async () => {
+    const h = harness();
+    h.dataset.table('Patient').push(makePatientRow({ id: testId(2), familyName: 'Before' }));
+    const slow = watched(h.port);
+    const collection = createPrismaCollection(
+      manyChildrenSpec([testId(3), testId(2)]),
+      slow.port,
+      h.scope
+    );
+
+    await expect(collection.create({ note: 'After' })).rejects.toThrow(/to amend/u);
+
+    expect(childTrail(h.port).slice(-1)).toEqual([
+      `amend ${JSON.stringify({ id: { equals: testId(3) } })}`,
+    ]);
+    expect(h.dataset.table('Patient')[0]?.familyName).toBe('Before');
+    expect(slow.peak()).toBe(1);
   });
 });
 

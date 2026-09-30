@@ -254,4 +254,118 @@ describe('createPortalHostedSynthesiser', () => {
     expect(pause).toHaveBeenCalledOnce();
     expect(revokeObjectURL).toHaveBeenCalledOnce();
   });
+
+  it('reports started once the audio begins to play', async () => {
+    process.env.NEXT_PUBLIC_HOSTED_VOICE_ENDPOINT = 'https://tts.example.com/synthesize';
+    process.env.NEXT_PUBLIC_HOSTED_VOICE_AGREEMENT = 'Executed voice-processing agreement';
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: () => Promise.resolve(new Blob(['audio data'], { type: 'audio/mpeg' })),
+    });
+    globalThis.Audio = class {
+      play = vi.fn().mockResolvedValue(undefined);
+      pause = vi.fn();
+      src = '';
+      onended = null;
+      onerror = null;
+    } as unknown as typeof Audio;
+    const handlers: PlaybackHandlers = { started: vi.fn(), finished: vi.fn(), failed: vi.fn() };
+
+    createPortalHostedSynthesiser()!.play({ text: 'Hello', language: 'en-GB' }, handlers);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(handlers.started).toHaveBeenCalledOnce();
+    expect(handlers.failed).not.toHaveBeenCalled();
+  });
+
+  it('reports a failure and releases the audio when the browser refuses to play it', async () => {
+    process.env.NEXT_PUBLIC_HOSTED_VOICE_ENDPOINT = 'https://tts.example.com/synthesize';
+    process.env.NEXT_PUBLIC_HOSTED_VOICE_AGREEMENT = 'Executed voice-processing agreement';
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: () => Promise.resolve(new Blob(['audio data'], { type: 'audio/mpeg' })),
+    });
+    const pause = vi.fn();
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL');
+    revokeObjectURL.mockClear();
+    globalThis.Audio = class {
+      play = vi.fn().mockRejectedValue(new Error('NotAllowedError'));
+      pause = pause;
+      src = '';
+      onended = null;
+      onerror = null;
+    } as unknown as typeof Audio;
+    const handlers: PlaybackHandlers = { started: vi.fn(), finished: vi.fn(), failed: vi.fn() };
+
+    createPortalHostedSynthesiser()!.play({ text: 'Hello', language: 'en-GB' }, handlers);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(handlers.failed).toHaveBeenCalledOnce();
+    expect(handlers.started).not.toHaveBeenCalled();
+    expect(pause).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledOnce();
+  });
+
+  it('plays nothing and reports nothing when stopped before the audio arrives', async () => {
+    process.env.NEXT_PUBLIC_HOSTED_VOICE_ENDPOINT = 'https://tts.example.com/synthesize';
+    process.env.NEXT_PUBLIC_HOSTED_VOICE_AGREEMENT = 'Executed voice-processing agreement';
+    let deliver: (blob: Blob) => void = () => undefined;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: () =>
+        new Promise<Blob>((resolve) => {
+          deliver = resolve;
+        }),
+    });
+    const created = vi.fn();
+    globalThis.Audio = class {
+      play = vi.fn().mockResolvedValue(undefined);
+      pause = vi.fn();
+      src = '';
+      onended = null;
+      onerror = null;
+
+      constructor() {
+        created();
+      }
+    } as unknown as typeof Audio;
+    const handlers: PlaybackHandlers = { started: vi.fn(), finished: vi.fn(), failed: vi.fn() };
+
+    const playback = createPortalHostedSynthesiser()!.play(
+      { text: 'Hello', language: 'en-GB' },
+      handlers
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    playback.stop();
+    deliver(new Blob(['audio data'], { type: 'audio/mpeg' }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(created).not.toHaveBeenCalled();
+    expect(handlers.started).not.toHaveBeenCalled();
+    expect(handlers.failed).not.toHaveBeenCalled();
+  });
+
+  it('does not report the aborted request as a failure once stopped', async () => {
+    process.env.NEXT_PUBLIC_HOSTED_VOICE_ENDPOINT = 'https://tts.example.com/synthesize';
+    process.env.NEXT_PUBLIC_HOSTED_VOICE_AGREEMENT = 'Executed voice-processing agreement';
+    globalThis.fetch = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          });
+        })
+    ) as unknown as typeof fetch;
+    const handlers: PlaybackHandlers = { started: vi.fn(), finished: vi.fn(), failed: vi.fn() };
+
+    const playback = createPortalHostedSynthesiser()!.play(
+      { text: 'Hello', language: 'en-GB' },
+      handlers
+    );
+    playback.stop();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(handlers.failed).not.toHaveBeenCalled();
+    expect(handlers.started).not.toHaveBeenCalled();
+  });
 });

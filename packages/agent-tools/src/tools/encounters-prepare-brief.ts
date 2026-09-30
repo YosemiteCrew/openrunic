@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
-import { ToolError, isToolError } from '../errors.js';
+import { ToolError } from '../errors.js';
 import { defineTool, type ToolContext } from '../registry.js';
 
 import { assertChartBound } from './patient-shared.js';
-import { apiListSchema, sourceRefSchema, type SourceRef } from './shared.js';
+import { apiListSchema, sourceRefSchema } from './shared.js';
 
 /**
  * Prepares a source-linked encounter brief for a clinician.

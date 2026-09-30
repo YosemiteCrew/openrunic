@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { createV1Registry } from '../catalogue.js';
-import { ToolError } from '../errors.js';
 import { resolveTools } from '../resolve.js';
 import {
   TEST_PATIENT_ID,
@@ -9,7 +8,6 @@ import {
   stubPrincipal,
   stubToolContext,
 } from '../testing/index.js';
-import type { ApiRequest } from '../api-client.js';
 
 import { encountersPrepareBrief, type EncounterBrief } from './encounters-prepare-brief.js';
 
@@ -142,12 +140,6 @@ function recentEncounter(overrides: Record<string, unknown> = {}) {
     updatedAt: '2026-06-01T10:30:00.000Z',
     ...overrides,
   };
-}
-
-function refuse(status: number): never {
-  throw new ToolError('AGENT_TOOL_FAILED', `The openrunic API answered ${String(status)}.`, {
-    status,
-  });
 }
 
 async function prepareBrief(

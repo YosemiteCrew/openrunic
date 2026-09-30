@@ -18,6 +18,8 @@ import { ApiError } from '../errors.js';
 import { parseParam, parseQuery } from '../http/validate.js';
 import { requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
+import { mapInBatches } from '../repositories/collection.js';
+import type { ScopedRow } from '../repositories/types.js';
 import {
   measureListSchema,
   measureReportSchema,
@@ -100,9 +102,7 @@ async function expandValueSets(
   urls: readonly string[]
 ): Promise<Map<string, ReadonlySet<string>>> {
   const repos = repositories(c);
-  const expanded = new Map<string, ReadonlySet<string>>();
-
-  for (const url of new Set(urls)) {
+  const read = await mapInBatches([...new Set(urls)], async (url) => {
     const page = await repos.valueSets.list({
       page: 1,
       pageSize: 1,
@@ -111,49 +111,63 @@ async function expandValueSets(
       url,
     });
     const row = page.rows[0];
-    if (row === undefined) continue;
+    if (row === undefined) return [];
 
     const parsed = parseValueSetDefinition(row.definition);
     // A definition that will not parse is treated as absent rather than as
     // empty. It was validated on the way in, so this means the stored row was
     // written by something else, and computing a rate from a set nobody can
     // read is worse than saying the measure cannot be computed.
-    if (!parsed.ok) continue;
+    return parsed.ok ? [{ url, definition: parsed.value }] : [];
+  });
 
-    expanded.set(url, await concepts(c, parsed.value));
-  }
+  const definitions = read.flat();
 
-  return expanded;
+  // Every code system any of them draws on, read once however many sets share it.
+  const systems = [...new Set(definitions.flatMap(({ definition }) => systemsOf(definition)))];
+  const loaded = (
+    await mapInBatches(systems, async (system) => {
+      const page = await repos.terminology.list({
+        page: 1,
+        pageSize: 10_000,
+        sort: 'code',
+        order: 'asc',
+        system,
+      });
+      return page.rows;
+    })
+  ).flat();
+
+  return new Map(
+    definitions.map(({ url, definition }) => [url, concepts(definition, loaded)] as const)
+  );
 }
 
-/** Every loaded code the definition selects. */
-async function concepts(
-  c: Context<AppEnv>,
-  definition: ValueSetDefinition
-): Promise<ReadonlySet<string>> {
-  const systems = new Set(definition.include.map((rule) => rule.system));
+function systemsOf(definition: ValueSetDefinition): string[] {
+  return definition.include.map((rule) => rule.system);
+}
+
+/**
+ * Every loaded code the definition selects. The rows span every set's systems;
+ * a rule names its system, so a row from another one matches nothing here.
+ */
+function concepts(
+  definition: ValueSetDefinition,
+  loaded: readonly ScopedRow<'TerminologyCode'>[]
+): ReadonlySet<string> {
   const members = new Set<string>();
 
-  for (const system of systems) {
-    const page = await repositories(c).terminology.list({
-      page: 1,
-      pageSize: 10_000,
-      sort: 'code',
-      order: 'asc',
-      system,
-    });
-    for (const row of page.rows) {
-      const concept = {
-        system: row.system,
-        code: row.code,
-        display: row.display,
-        version: row.version,
-        parentCode: row.parentCode,
-        isActive: row.isActive,
-        properties: null,
-      };
-      if (conceptInValueSet(concept, definition)) members.add(conceptKey(row.system, row.code));
-    }
+  for (const row of loaded) {
+    const concept = {
+      system: row.system,
+      code: row.code,
+      display: row.display,
+      version: row.version,
+      parentCode: row.parentCode,
+      isActive: row.isActive,
+      properties: null,
+    };
+    if (conceptInValueSet(concept, definition)) members.add(conceptKey(row.system, row.code));
   }
 
   return members;

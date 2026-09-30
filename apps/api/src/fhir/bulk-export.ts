@@ -7,6 +7,7 @@ import { grantsScope, parseScopes } from '../auth/scopes.js';
 import type { AppEnv } from '../context.js';
 import { ApiError } from '../errors.js';
 import type { PolicyContext } from '../policy/policy.js';
+import { inSequence } from '../repositories/collection.js';
 
 import type { FhirResourceModule } from './resource-module.js';
 
@@ -516,30 +517,33 @@ export async function runExport(
   const files: ExportFile[] = [];
   const truncations: ExportTruncation[] = [];
 
-  for (const module of modules) {
-    if (!types.includes(module.type)) continue;
+  // One type at a time, in module order: a type can hold up to `limit` rows in
+  // memory, and the files and the read record keep the order they always had.
+  await inSequence(
+    modules.filter((module) => types.includes(module.type)),
+    async (module) => {
+      const { kept, total, withheld } = await collectType(c, module, limit);
+      if (total > kept.length) {
+        // The key is omitted rather than set empty when nothing was withheld, so
+        // a ceiling truncation is exactly the record it has always been.
+        truncations.push({
+          type: module.type,
+          exported: kept.length,
+          total,
+          ...(withheld.length === 0 ? {} : { withheld }),
+        });
+      }
 
-    const { kept, total, withheld } = await collectType(c, module, limit);
-    if (total > kept.length) {
-      // The key is omitted rather than set empty when nothing was withheld, so
-      // a ceiling truncation is exactly the record it has always been.
-      truncations.push({
+      const rows = since === undefined ? kept : kept.filter((row) => isAfter(row, since));
+      if (rows.length === 0) return;
+
+      files.push({
         type: module.type,
-        exported: kept.length,
-        total,
-        ...(withheld.length === 0 ? {} : { withheld }),
+        ndjson: rows.map((resource) => JSON.stringify(resource)).join('\n'),
+        count: rows.length,
       });
     }
-
-    const rows = since === undefined ? kept : kept.filter((row) => isAfter(row, since));
-    if (rows.length === 0) continue;
-
-    files.push({
-      type: module.type,
-      ndjson: rows.map((resource) => JSON.stringify(resource)).join('\n'),
-      count: rows.length,
-    });
-  }
+  );
 
   return { files, truncations };
 }

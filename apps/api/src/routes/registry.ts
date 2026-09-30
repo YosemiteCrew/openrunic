@@ -8,6 +8,7 @@ import { problemDocumentSchema } from '../http/problem.js';
 import { parseJsonBody, parseQuery } from '../http/validate.js';
 import { requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
+import { mapInBatches } from '../repositories/collection.js';
 import type { ScopedRow } from '../repositories/types.js';
 import { gateCharts, repositories } from './helpers.js';
 
@@ -253,13 +254,13 @@ export function registryRoutes(router: Hono<AppEnv>): void {
       }
 
       const repos = repositories(c);
-      const reported: string[] = [];
-      for (const id of body.immunisationIds) {
-        const updated = await repos.immunisations.update(id, {
-          reportedToRegistryAt: body.reportedAt,
-        });
-        if (updated !== null) reported.push(updated.id);
-      }
+      // Each dose is stamped on its own, so they are stamped together, once
+      // each even when the caller names one twice.
+      const updated = await mapInBatches([...new Set(body.immunisationIds)], (id) =>
+        repos.immunisations.update(id, { reportedToRegistryAt: body.reportedAt })
+      );
+      const stamped = new Set(updated.flatMap((dose) => (dose === null ? [] : [dose.id])));
+      const reported = body.immunisationIds.filter((id) => stamped.has(id));
 
       await c.get('audit')?.write({
         action: 'registry.reported',

@@ -265,6 +265,27 @@ export function makeAppointmentRow(overrides: Partial<AppointmentRow> = {}): App
   };
 }
 
+export function makeTelehealthVisitRow(
+  overrides: Partial<ScopedRow<'TelehealthVisit'>> = {}
+): ScopedRow<'TelehealthVisit'> {
+  return {
+    ...storageColumns(testId(700)),
+    appointmentId: testId(101),
+    vendorId: 'daily-co',
+    roomRef: 'room-123',
+    joinUrl: 'https://video.daily.co/room-123',
+    status: 'OPEN',
+    scheduledStart: new Date('2026-08-14T15:00:00.000Z'),
+    expiresAt: new Date('2026-08-14T16:00:00.000Z'),
+    endedAt: null,
+    endedReason: null,
+    durationSeconds: null,
+    createdAt: FIXED_NOW,
+    updatedAt: FIXED_NOW,
+    ...overrides,
+  };
+}
+
 export interface TestApp {
   app: Hono<AppEnv>;
   dataset: MemoryDataset;

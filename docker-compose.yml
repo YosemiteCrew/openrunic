@@ -224,6 +224,11 @@ services:
         # The browser resolves this, not the container, so it is the address the
         # operator reaches the API on - never the compose service name.
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000}
+        # Hosted voice (text-to-speech) configuration. All three must be set
+        # together; an incomplete configuration is ignored.
+        NEXT_PUBLIC_HOSTED_VOICE_ENDPOINT: ${NEXT_PUBLIC_HOSTED_VOICE_ENDPOINT:-}
+        NEXT_PUBLIC_HOSTED_VOICE_AGREEMENT: ${NEXT_PUBLIC_HOSTED_VOICE_AGREEMENT:-}
+        NEXT_PUBLIC_HOSTED_VOICE_LANGUAGES: ${NEXT_PUBLIC_HOSTED_VOICE_LANGUAGES:-}
     image: openrunic-web:${OPENRUNIC_IMAGE_TAG:-local}
     restart: unless-stopped
     # Same identity the image already sets. Repeating it is not redundancy: a
@@ -253,6 +258,12 @@ services:
       # health route runs inside the network and reaches the API by service
       # name, which is what keeps the probe free of CORS.
       OPENRUNIC_API_INTERNAL_URL: http://api:4000
+      # Hosted voice (text-to-speech) runtime configuration. Used as fallback
+      # for the NEXT_PUBLIC_ build args when the image is rebuilt with new
+      # values. Both forms are accepted by the app.
+      OPENRUNIC_HOSTED_VOICE_ENDPOINT: ${OPENRUNIC_HOSTED_VOICE_ENDPOINT:-}
+      OPENRUNIC_HOSTED_VOICE_AGREEMENT: ${OPENRUNIC_HOSTED_VOICE_AGREEMENT:-}
+      OPENRUNIC_HOSTED_VOICE_LANGUAGES: ${OPENRUNIC_HOSTED_VOICE_LANGUAGES:-}
       # The sign-in flow, for the same reason the API block above names its own
       # copies. `oidcWebConfig` reads these from the process and returns null -
       # meaning "stay on the demo path" - the moment issuer, client id or

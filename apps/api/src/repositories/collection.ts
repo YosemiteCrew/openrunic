@@ -360,6 +360,87 @@ export function paginate<T>(rows: readonly T[], page: number, pageSize: number):
   return { rows: rows.slice(offset, offset + pageSize), total: rows.length, page, pageSize };
 }
 
+/**
+ * How many rows {@link listAll} fetches per round trip.
+ *
+ * Not a cap: `listAll` keeps going until it holds the whole result set. It is
+ * the batch size, and small enough that the suites reach the second iteration
+ * with an ordinary fixture rather than leaving it for production to discover.
+ */
+export const LIST_ALL_PAGE_SIZE = 100;
+
+/**
+ * Every row a query matches, paged to exhaustion.
+ *
+ * For a handler that must act on the whole set, where one page would quietly
+ * leave the rest behind. It stops at the reported total, and also at the first
+ * empty page, so a total that moves between two reads ends the walk instead of
+ * asking for further empty pages forever.
+ *
+ * The assertion re-attaches the paging fields to the caller's query. Expressing
+ * "this query, plus a page" in the type would mean being generic over a query
+ * minus two of its own keys, which buys nothing the call sites do not already
+ * prove.
+ */
+export async function listAll<TRow, TQuery extends BaseQuery>(
+  list: (query: TQuery) => Promise<Page<TRow>>,
+  query: Omit<TQuery, 'page' | 'pageSize'>
+): Promise<TRow[]> {
+  const rows: TRow[] = [];
+  for (let page = 1; ; page += 1) {
+    const result = await list({ ...query, page, pageSize: LIST_ALL_PAGE_SIZE } as TQuery);
+    rows.push(...result.rows);
+    if (result.rows.length === 0 || rows.length >= result.total) return rows;
+  }
+}
+
+/**
+ * How many independent repository calls one request keeps in flight at once.
+ *
+ * Each call runs in its own transaction on its own connection, and a `list`
+ * takes two (the page and the count), so two calls hold at most four of the
+ * pool's default ten. A request fanning out over two hundred lines then
+ * neither waits on each line in turn nor takes the connections every other
+ * request is queued for.
+ */
+export const FAN_OUT = 2;
+
+/**
+ * `task` over every item, at most {@link FAN_OUT} at a time, results in input
+ * order.
+ *
+ * For work whose items do not depend on each other. Each batch starts once the
+ * one before it has settled. The first rejection rejects the whole call and no
+ * later batch is started, though the rest of its own batch, already in flight,
+ * still runs to the end.
+ */
+export async function mapInBatches<T, R>(
+  items: readonly T[],
+  task: (item: T) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const head = await Promise.all(items.slice(0, FAN_OUT).map((item) => task(item)));
+  return [...head, ...(await mapInBatches(items.slice(FAN_OUT), task))];
+}
+
+/**
+ * `step` over every item strictly one after another, in order.
+ *
+ * For work that shares one interactive transaction, whose client is a single
+ * connection and must never be handed two queries at once, and for work whose
+ * order is part of its meaning. A step that rejects ends the run there, and no
+ * later step starts.
+ */
+export async function inSequence<T>(
+  items: readonly T[],
+  step: (item: T) => Promise<unknown>
+): Promise<void> {
+  await items.reduce<Promise<unknown>>(
+    (previous, item) => previous.then(() => step(item)),
+    Promise.resolve()
+  );
+}
+
 /** Case-insensitive prefix match, matching the FHIR `string` search semantic. */
 export function startsWithFold(value: string | null, prefix: string): boolean {
   return value !== null && value.toLowerCase().startsWith(prefix.toLowerCase());

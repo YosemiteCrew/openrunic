@@ -11,6 +11,7 @@ import type {
   FormDefinitionDto,
   ListResponse,
   MedicationStatementDto,
+  MessageDto,
   NoteAddendumDto,
   Patient,
   PatientCreateBody,
@@ -285,13 +286,17 @@ export function createHttpClient(config: ApiClientConfig): ApiClient {
           `/results/${segment(id)}/observations${toSearchParams(query)}`,
           signal
         ),
-      review: (id, signal) =>
-        post<DiagnosticReportDto>(`/results/${segment(id)}/review`, {}, signal),
+      review: (id, body, signal) =>
+        post<DiagnosticReportDto>(`/results/${segment(id)}/review`, body ?? {}, signal),
     },
     tasks: {
       list: (query, signal) => get<ListResponse<TaskDto>>(`/tasks${toSearchParams(query)}`, signal),
       complete: (id, body, signal) =>
         post<TaskDto>(`/tasks/${segment(id)}/complete`, body ?? {}, signal),
+    },
+    messages: {
+      postMessage: (threadId, body, signal) =>
+        post<MessageDto>(`/messages/threads/${segment(threadId)}/messages`, body, signal),
     },
     claims: {
       scrub: (id, body, signal) =>

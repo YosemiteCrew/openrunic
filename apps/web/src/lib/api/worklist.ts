@@ -502,6 +502,9 @@ export interface InboxItem {
   unread: boolean | null;
   /** Where the full context lives, when there is more to see. */
   href: string | null;
+  /** The kind and id of the record whose action this task represents. */
+  subjectType?: string | null;
+  subjectId?: string | null;
 }
 
 export interface InboxListQuery {
@@ -668,11 +671,7 @@ export interface WorklistClient {
      * the instant a fixture client stamps; the API stamps its own.
      */
     sign: (report: ResultReport, note: string | null, now: string) => Promise<ResultSignature>;
-    /**
-     * Whether a sign-off can carry a note. The API's review records who and
-     * when and nothing typed, so a live client offers no note rather than
-     * accepting one it would drop.
-     */
+    /** Whether a sign-off can carry a note. */
     notes: boolean;
   };
   inbox: {
@@ -686,6 +685,8 @@ export interface WorklistClient {
     completes: (item: InboxItem) => boolean;
     /** Records the row's disposition. Rejects when nothing was recorded. */
     complete: (item: InboxItem) => Promise<void>;
+    /** Sends a message reply and completes its work item, or null when unsupported. */
+    reply: ((item: InboxItem, body: string) => Promise<void>) | null;
     /** Moves a pooled row to the reader, or null where the client cannot record that. */
     claim: ((item: InboxItem) => Promise<void>) | null;
     /** Puts a finished or claimed row back, or null where the client cannot. */
@@ -742,6 +743,7 @@ export function createWorklistClient(data: Partial<WorklistData> = {}): Worklist
       list: (query) => Promise.resolve({ ...page(filterInbox(inbox, query)), refused: 0 }),
       completes: () => true,
       complete: () => Promise.resolve(),
+      reply: () => Promise.resolve(),
       claim: () => Promise.resolve(),
       reopen: () => Promise.resolve(),
     },
@@ -912,11 +914,11 @@ export function liveResults(client: ApiClient, userId: string | null): WorklistC
         })),
     /* `/review` records the signer from the credential and the time from its
        own clock, and answers with the report as it now stands. */
-    sign: async (report, _note, now) => {
-      const reviewed = await client.results.review(report.id);
-      return { at: reviewed.reviewedAt ?? now, by: reviewed.reviewedById, note: null };
+    sign: async (report, note, now) => {
+      const reviewed = await client.results.review(report.id, note === null ? undefined : { note });
+      return { at: reviewed.reviewedAt ?? now, by: reviewed.reviewedById, note };
     },
-    notes: false,
+    notes: true,
   };
 }
 
@@ -970,6 +972,8 @@ export function toInboxItem(dto: TaskDto, userId: string): InboxItem | null {
        message thread or a prescription has nowhere to open yet, and a link to
        nowhere is worse than no link. */
     href: dto.subjectType === 'DiagnosticReport' ? '/results' : null,
+    subjectType: dto.subjectType,
+    subjectId: dto.subjectId,
   };
 }
 
@@ -1029,21 +1033,35 @@ export function toTaskQuery(query: InboxListQuery, userId: string): TaskListQuer
 const INBOX_PAGE_SIZE = 100;
 
 /**
- * The dispositions the API records by itself, over `POST /bff/v0/tasks/{id}/complete`.
- *
- * One kind only: closing a general task. Approving a refill, cosigning a note
- * and answering a message each change something other than the task, and
- * closing the task alone would tell the reader it had been done - so those rows
- * are read here and offered no button. The API has no route to claim a pooled
- * task or to reopen a finished one, so neither is offered either.
+ * The dispositions the API can record from an inbox row.
  *
  * None of this needs the caller's id: the route takes the actor from the
  * credential, which is why the module-level client below carries these too.
  */
 function liveInboxWrites(client: ApiClient): Omit<WorklistClient['inbox'], 'list'> {
   return {
-    completes: (item) => item.stream === 'TASKS',
+    completes: (item) =>
+      item.stream === 'TASKS' ||
+      item.stream === 'REFILLS' ||
+      item.stream === 'COSIGN' ||
+      (item.stream === 'RESULTS' &&
+        item.subjectType === 'DiagnosticReport' &&
+        item.subjectId != null) ||
+      (item.stream === 'MESSAGES' &&
+        item.subjectType === 'MessageThread' &&
+        item.subjectId != null),
     complete: async (item) => {
+      if (item.stream === 'RESULTS' && item.subjectId != null) {
+        await client.results.review(item.subjectId);
+        return;
+      }
+      await client.tasks.complete(item.id);
+    },
+    reply: async (item, body) => {
+      if (item.stream !== 'MESSAGES' || item.subjectId == null) {
+        throw new Error('This inbox item is not a message thread.');
+      }
+      await client.messages.postMessage(item.subjectId, { body });
       await client.tasks.complete(item.id);
     },
     claim: null,

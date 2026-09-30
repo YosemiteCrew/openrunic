@@ -1231,16 +1231,113 @@ describe('results', () => {
 
   it('signs off a result once and refuses a second sign-off', async () => {
     const { app } = seededApp();
-    const reviewed = await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, { body: {} });
+    const reviewed = await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, {
+      body: { note: 'Discussed with the patient.' },
+    });
 
     expect(reviewed.status).toBe(200);
     const dto = await body<DiagnosticReportDto>(reviewed);
     expect(dto.reviewedById).toBe(CLINICIAN);
     expect(dto.reviewedAt).toMatch(/T.*Z$/);
+    expect(dto.narrative).toBe('Discussed with the patient.');
 
     const again = await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, { body: {} });
     expect(again.status).toBe(409);
     expect((await problem(again)).detail).toContain('already been reviewed');
+  });
+
+  it('completes the RESULT task assigned to the reviewing clinician', async () => {
+    const { app, dataset } = seededApp();
+    await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, { body: {} });
+
+    const tasks = dataset.table('Task');
+    const task = tasks.find(
+      (t) =>
+        t.type === 'RESULT' &&
+        t.subjectType === 'DiagnosticReport' &&
+        t.subjectId === REPORT_A &&
+        t.assigneeUserId === CLINICIAN
+    );
+    expect(task).toBeDefined();
+    expect(task!.status).toBe('DONE');
+    expect(task!.completedById).toBe(CLINICIAN);
+    expect(task!.outcome).toBe('Reviewed and signed off');
+    expect(task!.completedAt).not.toBeNull();
+  });
+
+  it('completes RESULT tasks in the team pool and in a colleague queue', async () => {
+    const { app, dataset } = seededApp();
+    seed(
+      dataset,
+      'Task',
+      makeTaskRow({
+        id: TASK_B,
+        assigneeType: 'TEAM',
+        assigneeUserId: null,
+        assigneeTeamKey: 'lab',
+      })
+    );
+    seed(dataset, 'Task', makeTaskRow({ id: TASK_C, assigneeUserId: OTHER_USER }));
+
+    await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, { body: {} });
+
+    const tasks = dataset.table('Task');
+    for (const id of [TASK_B, TASK_C]) {
+      const task = tasks.find((t) => t.id === id);
+      expect(task?.status).toBe('DONE');
+      expect(task?.completedById).toBe(CLINICIAN);
+    }
+  });
+
+  it('leaves a RESULT task for a different report open', async () => {
+    const { app, dataset } = seededApp();
+    seed(dataset, 'Task', makeTaskRow({ id: TASK_B, subjectId: REPORT_B }));
+
+    await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, { body: {} });
+
+    const task = dataset.table('Task').find((t) => t.id === TASK_B);
+    expect(task?.status).toBe('OPEN');
+    expect(task?.completedAt).toBeNull();
+  });
+
+  it('completes every open RESULT task for the report, past the first page', async () => {
+    const { app, dataset } = seededApp();
+    const statuses = ['OPEN', 'IN_PROGRESS', 'ON_HOLD'] as const;
+    // Two and a half pages of open work on this report, so the last page is a
+    // partial one and the walk has to go past the first two.
+    const openIds = Array.from({ length: 250 }, (_, i) => testId(5000 + i));
+    seed(
+      dataset,
+      'Task',
+      ...openIds.map((id, i) => makeTaskRow({ id, status: statuses[i % statuses.length] }))
+    );
+    const untouched = [
+      makeTaskRow({ id: testId(4990), subjectId: REPORT_B }),
+      makeTaskRow({ id: testId(4991), type: 'MESSAGE' }),
+      makeTaskRow({ id: testId(4992), status: 'CANCELLED' }),
+    ];
+    seed(dataset, 'Task', ...untouched);
+    const before = new Map(untouched.map((row) => [row.id, { ...row }]));
+
+    const res = await call(app, 'post', `/bff/v0/results/${REPORT_A}/review`, { body: {} });
+    expect(res.status).toBe(200);
+
+    const tasks = dataset.table('Task');
+    // The premise: the report really does carry more than one page of tasks
+    // (the seeded one plus these), all of them now finished.
+    const finished = tasks.filter((t) => t.id === TASK_A || openIds.includes(t.id));
+    expect(finished).toHaveLength(251);
+    for (const task of finished) {
+      expect(task).toMatchObject({
+        status: 'DONE',
+        completedById: CLINICIAN,
+        outcome: 'Reviewed and signed off',
+      });
+      expect(task.completedAt).not.toBeNull();
+    }
+    for (const [id, row] of before) {
+      expect(tasks.find((t) => t.id === id)).toEqual(row);
+    }
   });
 
   it('refuses a sign-off from a service account holding the permission', async () => {

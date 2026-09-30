@@ -4,6 +4,7 @@ import { formatCount } from '@openrunic/i18n';
 import { IconButton } from '@openrunic/ui';
 import {
   chooseCapture,
+  createHostedReadback,
   createPlatformReadback,
   speakableTurns,
   useReadback,
@@ -16,6 +17,7 @@ import type { ReactElement } from 'react';
 import { chartPatientIdFromPath } from '@/lib/agent';
 import type { AgentModelIdentity } from '@/lib/agent';
 import { useTranslator } from '@/lib/i18n/messages';
+import { createWebHostedReadbackEgress, createWebHostedSynthesiser } from '@/lib/voice';
 
 import { useAssistant } from './AssistantProvider';
 import { AssistantComposer } from './AssistantComposer';
@@ -103,7 +105,13 @@ export function AssistantPanel({
      last answer again. */
   const port = useMemo(() => {
     if (!onScreen) return null;
-    return readback === undefined ? createPlatformReadback() : readback;
+    if (readback !== undefined) return readback;
+    const hostedEgress = createWebHostedReadbackEgress();
+    const hostedSynthesiser = createWebHostedSynthesiser();
+    if (hostedEgress && hostedSynthesiser) {
+      return createHostedReadback(hostedSynthesiser, hostedEgress);
+    }
+    return createPlatformReadback();
   }, [onScreen, readback]);
 
   /* The microphone needs no gate like the voice's. It is owned by the composer,

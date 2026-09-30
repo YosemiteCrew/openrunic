@@ -841,6 +841,8 @@ export interface TaskListQuery extends BaseQuery {
    */
   inboxFor?: string;
   slaState?: TaskSlaState;
+  subjectType?: string;
+  subjectId?: string;
   /** Inclusive lower bound on `dueAt`. */
   from?: Date;
   /** Exclusive upper bound on `dueAt`. */
@@ -992,6 +994,8 @@ export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, T
     if (query.patientId !== undefined && row.patientId !== query.patientId) return false;
     if (!ownsTask(row, query)) return false;
     if (query.slaState !== undefined && row.slaState !== query.slaState) return false;
+    if (query.subjectType !== undefined && row.subjectType !== query.subjectType) return false;
+    if (query.subjectId !== undefined && row.subjectId !== query.subjectId) return false;
     return inWindow(row.dueAt, query.from, query.to);
   },
 
@@ -1010,6 +1014,8 @@ export const taskSpec: CollectionSpec<'Task', TaskCreateInput, TaskPatchInput, T
         ? {}
         : { OR: [{ assigneeUserId: query.inboxFor }, { assigneeType: 'TEAM' as const }] }),
       ...(query.slaState === undefined ? {} : { slaState: query.slaState }),
+      ...(query.subjectType === undefined ? {} : { subjectType: query.subjectType }),
+      ...(query.subjectId === undefined ? {} : { subjectId: query.subjectId }),
       ...(dueAt === undefined ? {} : { dueAt }),
     };
   },

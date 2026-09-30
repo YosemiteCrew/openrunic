@@ -608,6 +608,8 @@ const FILTERS: {
     // so the pair is exercised instead of short-circuiting to "matches nothing".
     inboxFor: 'id-assigneeUserId',
     slaState: 'OK',
+    subjectType: 'DiagnosticReport',
+    subjectId: 'id-subjectId',
     from: new Date('2026-08-01T00:00:00.000Z'),
     to: new Date('2026-09-01T00:00:00.000Z'),
   },

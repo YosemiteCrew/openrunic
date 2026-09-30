@@ -13,6 +13,7 @@ import {
   type CompartmentRule,
   type Page,
   type RowContext,
+  inSequence,
 } from './collection.js';
 import type { DbPort, DbTransaction } from './db-port.js';
 import { buildRepositories, type RequestScope } from './registry.js';
@@ -220,8 +221,21 @@ export function createPrismaCollection<
 
   const delegate = port.model(spec.model);
 
+  /**
+   * The chart an audit event belongs to. A row with its own patient column
+   * answers for itself. A `through` row has none, but a compartment-pinned
+   * caller only ever reaches one whose parent carries that caller's patient, so
+   * the compartment is the answer and the patient access report can list it.
+   */
+  const chartOf = (row: ScopedRow<M>): { patientId?: string } =>
+    compartment !== undefined &&
+    typeof spec.compartment === 'object' &&
+    'through' in spec.compartment
+      ? { patientId: compartment }
+      : patientOf(spec, row);
+
   const recordRead = (row: ScopedRow<M>): void => {
-    audit.read({ targetType: spec.targetType, targetId: row.id, ...patientOf(spec, row) });
+    audit.read({ targetType: spec.targetType, targetId: row.id, ...chartOf(row) });
   };
 
   const writeEvent = (
@@ -232,7 +246,7 @@ export function createPrismaCollection<
     action: `${spec.action}.${before === null ? 'created' : 'updated'}`,
     targetType: spec.targetType,
     targetId: row.id,
-    ...patientOf(spec, row),
+    ...chartOf(row),
     ...facilityOf(spec, row),
     ...encounterOf(spec, row),
     metadata: { fields: [...fields], ...spec.writeMetadata?.(row, before) },
@@ -252,7 +266,7 @@ export function createPrismaCollection<
           'through' in rule
             ? (await tx.model(rule.through.model).findFirst({
                 where: {
-                  id: (columns as Record<string, unknown>)[rule.through.key],
+                  id: { equals: (columns as Record<string, unknown>)[rule.through.key] },
                   [rule.through.column]: { equals: compartment },
                 },
               } as FindFirstArgs<PrismaModelName>)) !== null
@@ -279,12 +293,14 @@ export function createPrismaCollection<
       } as CreateArgs<M>);
       const row = toPlainRow<M>(record) as ScopedRow<M>;
 
-      for (const batch of spec.childRows?.(input, row, context) ?? []) {
-        await writeChildren(tx, batch);
-      }
-      for (const patch of spec.childPatches?.(input, row, context) ?? []) {
-        await patchChild(tx, patch);
-      }
+      // One after another: every statement here shares the transaction's
+      // single connection.
+      await inSequence(spec.childRows?.(input, row, context) ?? [], (batch) =>
+        writeChildren(tx, batch)
+      );
+      await inSequence(spec.childPatches?.(input, row, context) ?? [], (patch) =>
+        patchChild(tx, patch)
+      );
 
       await audit.write(writeEvent(row, null, Object.keys(columns)), tx);
       return row;
@@ -405,12 +421,12 @@ export function createPrismaCollection<
   };
 }
 
-async function writeChildren(tx: DbTransaction, batch: ChildBatch): Promise<void> {
-  for (const child of batch.rows) {
-    await tx.model(batch.model).create({
+function writeChildren(tx: DbTransaction, batch: ChildBatch): Promise<void> {
+  return inSequence(batch.rows, (child) =>
+    tx.model(batch.model).create({
       data: { ...omitNulls(child), tenantId: TENANT_STAMPED_BY_CLIENT },
-    } as CreateArgs<PrismaModelName>);
-  }
+    } as CreateArgs<PrismaModelName>)
+  );
 }
 
 /**

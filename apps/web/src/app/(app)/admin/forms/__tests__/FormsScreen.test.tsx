@@ -21,7 +21,7 @@ describe('FormsScreen', () => {
   it('carries the three-crumb trail down to the version being edited', async () => {
     render(<FormsScreen />);
     const crumbs = await screen.findByRole('navigation', { name: 'Breadcrumb' });
-    expect(within(crumbs).getByRole('link', { name: 'Form builder' })).toBeInTheDocument();
+    expect(await within(crumbs).findByRole('link', { name: 'Form builder' })).toBeInTheDocument();
     expect(within(crumbs).getByText('Adult intake v3')).toHaveAttribute('aria-current', 'page');
   });
 

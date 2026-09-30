@@ -39,7 +39,7 @@ import {
 import { causeText, dispensedQuantity } from '../inventory/posting.js';
 import { assertFacilityAccess, assertPermission, requirePermission } from '../middleware/policy.js';
 import type { RouteContract } from '../openapi/registry.js';
-import type { BaseQuery, Page } from '../repositories/collection.js';
+import { listAll, mapInBatches } from '../repositories/collection.js';
 import type {
   StockItemListQuery,
   StockLotCreateInput,
@@ -223,48 +223,18 @@ async function resolveChart(
 const NO_LOT = 'No such stock lot.';
 const NO_FACILITY = 'No such facility.';
 
-/**
- * How many rows a snapshot fetches per round trip.
- *
- * Not a cap: {@link collect} keeps going until it holds the whole result set. It
- * is the batch size, and it is deliberately smaller than a busy lot's ledger so
- * that the second iteration is a path the suite exercises rather than a path
- * production discovers.
- */
-const SNAPSHOT_PAGE = 100;
-
-/**
- * Every row a query matches, paged to exhaustion.
- *
- * The assertion re-attaches the paging fields to the caller's query. Expressing
- * "this query, plus a page" in the type would mean being generic over a query
- * minus two of its own keys, which buys nothing the two call sites do not
- * already prove.
- */
-async function collect<TRow, TQuery extends BaseQuery>(
-  list: (query: TQuery) => Promise<Page<TRow>>,
-  query: Omit<TQuery, 'page' | 'pageSize'>
-): Promise<TRow[]> {
-  const rows: TRow[] = [];
-  for (let page = 1; ; page += 1) {
-    const result = await list({ ...query, page, pageSize: SNAPSHOT_PAGE } as TQuery);
-    rows.push(...result.rows);
-    if (rows.length >= result.total) return rows;
-  }
-}
-
 function allLots(
   c: Context<AppEnv>,
   query: Omit<StockLotListQuery, 'page' | 'pageSize'>
 ): Promise<LotRow[]> {
-  return collect((q: StockLotListQuery) => repositories(c).stockLots.list(q), query);
+  return listAll((q: StockLotListQuery) => repositories(c).stockLots.list(q), query);
 }
 
 function allMovements(
   c: Context<AppEnv>,
   query: Omit<StockMovementListQuery, 'page' | 'pageSize'>
 ): Promise<MovementRow[]> {
-  return collect((q: StockMovementListQuery) => repositories(c).stockMovements.list(q), query);
+  return listAll((q: StockMovementListQuery) => repositories(c).stockMovements.list(q), query);
 }
 
 /**
@@ -285,7 +255,7 @@ async function statusHistoryByLot(
   const byLot = new Map<string, ScopedRow<'StockLotStatusChange'>[]>();
   if (lotIds.length === 0) return byLot;
 
-  const rows = await collect(
+  const rows = await listAll(
     (q: StockLotStatusChangeListQuery) => repositories(c).stockLotStatusChanges.list(q),
     { lotIds, sort: 'effectiveOn' as const, order: 'asc' as const }
   );
@@ -320,6 +290,15 @@ function latestChange(
     }
   }
   return newest;
+}
+
+/** The lots `lotIds` name that this caller can see, in one query, by id. */
+async function lotsByIdOf(
+  c: Context<AppEnv>,
+  lotIds: readonly string[]
+): Promise<Map<string, LotRow>> {
+  const lots = await repositories(c).stockLots.findByIds(lotIds);
+  return new Map(lots.map((lot) => [lot.id, lot]));
 }
 
 /** One lot's whole ledger at one site, oldest first. */
@@ -419,7 +398,7 @@ async function writeAct(
 ): Promise<StockPostingDto> {
   const { stockPostings, stockMovements } = repositories(c);
   const posting = await stockPostings.create(input);
-  const lines = await collect((q: StockMovementListQuery) => stockMovements.list(q), {
+  const lines = await listAll((q: StockMovementListQuery) => stockMovements.list(q), {
     postingId: posting.id,
     sort: 'occurredOn' as const,
     order: 'asc' as const,
@@ -763,7 +742,7 @@ export function inventoryRoutes(): Hono<AppEnv> {
 
     const asOf = await resolveAsOf(c, query.facilityId, query.asOf);
     const { lots, movements } = await snapshot(c, { facilityId: query.facilityId });
-    const items = await collect((q: StockItemListQuery) => repositories(c).stockItems.list(q), {
+    const items = await listAll((q: StockItemListQuery) => repositories(c).stockItems.list(q), {
       active: true,
       sort: 'name' as const,
       order: 'asc' as const,
@@ -813,31 +792,14 @@ export function inventoryRoutes(): Hono<AppEnv> {
     const actorId = attributedTo(c);
     const repos = repositories(c);
 
-    const newLots: (StockLotCreateInput & { id: string })[] = [];
-    const lines: StockPostingLine[] = [];
-    // One tracker per item, built from that item's whole ledger at this site, so
-    // two lines of one delivery into the same lot take consecutive sequences
-    // rather than colliding on one.
-    const trackers = new Map<string, (lotId: string) => number>();
-
-    for (const [index, line] of body.lines.entries()) {
-      const item = required(await repos.stockItems.findById(line.itemId), NO_ITEM);
-      const quantity = 'packs' in line ? packsInUnits(item, line.packs, index) : line.quantity;
-
-      let nextSeq = trackers.get(line.itemId);
-      if (nextSeq === undefined) {
-        nextSeq = seqTracker(
-          await allMovements(c, {
-            itemId: line.itemId,
-            facilityId: body.facilityId,
-            sort: 'occurredOn',
-            order: 'asc',
-          })
-        );
-        trackers.set(line.itemId, nextSeq);
-      }
-
-      const known = await repos.stockLots.list({
+    // Every read a line needs depends on the body alone, so they are made up
+    // front, in small batches. The walk below still goes one line after another,
+    // because what one line mints and sequences is what the next one sees, and it
+    // refuses a bad line at the same point it always did.
+    const reads = await mapInBatches(body.lines, async (line) => ({
+      line,
+      item: await repos.stockItems.findById(line.itemId),
+      known: await repos.stockLots.list({
         page: 1,
         pageSize: 1,
         sort: 'createdAt',
@@ -845,7 +807,32 @@ export function inventoryRoutes(): Hono<AppEnv> {
         facilityId: body.facilityId,
         itemId: line.itemId,
         lotNumber: line.lotNumber,
-      });
+      }),
+    }));
+    // One tracker over the whole ledger at this site of every item the delivery
+    // names, so two lines into the same lot take consecutive sequences rather
+    // than colliding on one. Sequences are counted per lot, and a lot belongs to
+    // one item, so one tracker over all of them counts exactly as one per item.
+    const nextSeq = seqTracker(
+      (
+        await mapInBatches([...new Set(body.lines.map((line) => line.itemId))], (itemId) =>
+          allMovements(c, {
+            itemId,
+            facilityId: body.facilityId,
+            sort: 'occurredOn',
+            order: 'asc',
+          })
+        )
+      ).flat()
+    );
+
+    const newLots: (StockLotCreateInput & { id: string })[] = [];
+    const lines: StockPostingLine[] = [];
+
+    for (const [index, { line, item: found, known }] of reads.entries()) {
+      const item = required(found, NO_ITEM);
+      const quantity = 'packs' in line ? packsInUnits(item, line.packs, index) : line.quantity;
+
       // Also against the lots this same delivery has already minted, so two
       // lines naming one new carton land in one lot rather than in two rows
       // that would then violate the unique key.
@@ -1118,16 +1105,27 @@ export function inventoryRoutes(): Hono<AppEnv> {
     const body = await parseJsonBody(c, countSchema);
     beginWrite(c, body.facilityId);
     const actorId = attributedTo(c);
-    const repos = repositories(c);
 
     const movements: PackageMovement[] = [];
     const agreed: CountResult['agreed'] = [];
     const variances: CountResult['variances'] = [];
     const ledger: MovementRow[] = [];
 
+    // Every lot on the sheet in one query, and each one's ledger in small batches
+    // rather than one after another: none of them depends on another, and all
+    // of them are read before any of this posting's lines are written.
+    const lots = await lotsByIdOf(
+      c,
+      body.lines.map((line) => line.lotId)
+    );
+    const reads = await mapInBatches(body.lines, async (line) => ({
+      line,
+      lotLedger: await ledgerOfLot(c, line.lotId, body.facilityId),
+    }));
+
     const countedLots = new Set<string>();
-    for (const [index, line] of body.lines.entries()) {
-      const lot = required(await repos.stockLots.findById(line.lotId), NO_LOT);
+    for (const [index, { line, lotLedger }] of reads.entries()) {
+      const lot = required(lots.get(line.lotId) ?? null, NO_LOT);
       if (lot.facilityId !== body.facilityId) throw ApiError.notFound(NO_LOT);
 
       // Asserted here as well as refused by the schema, because this loop's
@@ -1148,7 +1146,6 @@ export function inventoryRoutes(): Hono<AppEnv> {
       }
       countedLots.add(line.lotId);
 
-      const lotLedger = await ledgerOfLot(c, line.lotId, body.facilityId);
       ledger.push(...lotLedger);
       const expected = lotBalance(lotLedger.map(toMovement), line.lotId, body.occurredOn);
       const variance = varianceFor(line.counted, expected, index);
@@ -1219,7 +1216,6 @@ export function inventoryRoutes(): Hono<AppEnv> {
 
     beginWrite(c, body.facilityId);
     const actorId = attributedTo(c);
-    const repos = repositories(c);
 
     // Today where the stock physically is, for the same reason every computed
     // read resolves it that way: a clinic in Los Angeles at five in the
@@ -1238,9 +1234,10 @@ export function inventoryRoutes(): Hono<AppEnv> {
       ]);
     }
 
+    const found = await lotsByIdOf(c, body.lotIds);
     const lots: LotRow[] = [];
     for (const [index, lotId] of body.lotIds.entries()) {
-      const lot = required(await repos.stockLots.findById(lotId), NO_LOT);
+      const lot = required(found.get(lotId) ?? null, NO_LOT);
       // A lot at another site is a 422 rather than a 404: it exists and the
       // caller may well be able to see it, and filing its change under this
       // posting would attribute the act to a stockroom that never held it. The

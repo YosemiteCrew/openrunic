@@ -18,11 +18,13 @@ import type { RouteContract } from '../openapi/registry.js';
 
 import { referralRouteContracts, referralRoutes } from './referrals.js';
 import type { Permission } from '../policy/permissions.js';
+import { listAll, mapInBatches } from '../repositories/collection.js';
 import type {
   DocumentStatus,
   MessageSenderType,
   ServiceRequestStatus,
   SpecimenStatus,
+  TaskListQuery,
   TaskStatus,
 } from '../repositories/specs/orders.js';
 import {
@@ -52,6 +54,7 @@ import {
   messageThreadPatchSchema,
   resultObservationDtoSchema,
   resultObservationListQuerySchema,
+  resultReviewSchema,
   serviceRequestDtoSchema,
   serviceRequestListQuerySchema,
   serviceRequestPatchSchema,
@@ -583,9 +586,10 @@ function transitionRoutes(): Hono<AppEnv> {
 
   router.post('/results/:id/review', requirePermission('result.write'), async (c) => {
     const id = pathId(c.req.param('id'));
-    await parseTransitionBody(c, emptyBodySchema);
+    const body = await parseTransitionBody(c, resultReviewSchema);
     const reviewedById = actingUserId(c);
-    const reports = repositories(c).reports;
+    const repos = repositories(c);
+    const reports = repos.reports;
     const before = await requiredParentChart(c, 'reports', await reports.findById(id), NO_REPORT);
     if (before.reviewedAt !== null) {
       // An already-reviewed result is a result somebody has already acted on,
@@ -593,9 +597,39 @@ function transitionRoutes(): Hono<AppEnv> {
       throw ApiError.conflict('That result has already been reviewed.');
     }
     const row = required(
-      await reports.update(id, { reviewedAt: new Date(), reviewedById }),
+      await reports.update(id, {
+        reviewedAt: new Date(),
+        reviewedById,
+        ...(body.note ? { narrative: body.note } : {}),
+      }),
       NO_REPORT
     );
+
+    // Finish every open RESULT task for this report, whoever holds it: the
+    // team pool and a colleague's queue should not keep a signed-off result.
+    // Every page of them, not the first: a report can carry more open tasks
+    // than one page holds, and each one left behind stays in somebody's queue.
+    const tasks = repos.tasks;
+    const open = await listAll((q: TaskListQuery) => tasks.list(q), {
+      type: 'RESULT',
+      subjectType: 'DiagnosticReport',
+      subjectId: id,
+      statusIn: ['OPEN', 'IN_PROGRESS', 'ON_HOLD'] as const,
+      sort: 'createdAt',
+      order: 'asc',
+    });
+    // Each task is its own row and its own write, so they go in small batches
+    // rather than one after another.
+    const completedAt = new Date();
+    await mapInBatches(open, (task) =>
+      tasks.update(task.id, {
+        status: 'DONE',
+        completedAt,
+        completedById: reviewedById,
+        outcome: 'Reviewed and signed off',
+      })
+    );
+
     return c.json(toDiagnosticReportDto(row));
   });
 

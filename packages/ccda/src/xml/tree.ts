@@ -13,6 +13,8 @@ export interface XmlElement {
   readonly name: string;
   readonly attributes: Readonly<Record<string, string>>;
   readonly children: readonly XmlNode[];
+  /** Character offset in an imported source document. Absent on generated trees. */
+  readonly sourceOffset?: number;
 }
 
 /** A child is an element or a run of text. */
@@ -26,13 +28,19 @@ export function isElement(node: XmlNode): node is XmlElement {
 export function element(
   name: string,
   attributes: Readonly<Record<string, string | undefined>> = {},
-  children: readonly XmlNode[] = []
+  children: readonly XmlNode[] = [],
+  sourceOffset?: number
 ): XmlElement {
   const kept: Record<string, string> = {};
   for (const [key, value] of Object.entries(attributes)) {
     if (value !== undefined) kept[key] = value;
   }
-  return { name, attributes: kept, children };
+  return {
+    name,
+    attributes: kept,
+    children,
+    ...(sourceOffset === undefined ? {} : { sourceOffset }),
+  };
 }
 
 /**

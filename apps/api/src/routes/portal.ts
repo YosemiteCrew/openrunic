@@ -234,14 +234,32 @@ async function appointmentsFor(repos: Repositories, now: Date) {
       repos.appointments.list({ page, pageSize, sort: 'start', order: 'asc' })
     )
   ).filter((row) => row.status !== 'ENTERED_IN_ERROR');
+
+  const appointmentIds = rows.map((row) => row.id);
+  const openVisits = await Promise.all(
+    appointmentIds.map((appointmentId) =>
+      repos.telehealthVisits.list({
+        appointmentId,
+        status: 'OPEN',
+        page: 1,
+        pageSize: 1,
+        sort: 'scheduledStart',
+        order: 'asc',
+      })
+    )
+  );
+  const telehealthByAppointment = new Map(
+    openVisits.flatMap((result) => result.rows.map((visit) => [visit.appointmentId, visit]))
+  );
+
+  const facilityIds = rows.map((row) => row.facilityId);
   const facilities = new Map(
-    (await repos.facilities.findByIds(rows.map((row) => row.facilityId))).map((row) => [
-      row.id,
-      row,
-    ])
+    (await repos.facilities.findByIds(facilityIds)).map((row) => [row.id, row])
   );
   const mapped = rows.map((row) => {
     const facility = facilities.get(row.facilityId);
+    const telehealth = telehealthByAppointment.get(row.id);
+    const isVideo = telehealth !== undefined;
     return {
       id: row.id,
       startsAt: row.start.toISOString(),
@@ -249,9 +267,9 @@ async function appointmentsFor(repos: Repositories, now: Date) {
       reason: row.reasonText ?? row.typeDisplay,
       clinician: null,
       department: facility?.name ?? null,
-      mode: null,
+      mode: isVideo ? ('video' as const) : null,
       location: facilityLocation(facility, row.room),
-      joinUrl: null,
+      joinUrl: isVideo ? telehealth.joinUrl : null,
       directionsUrl: null,
       cancelledReason: row.cancelReason,
       cancellationSupported: false,

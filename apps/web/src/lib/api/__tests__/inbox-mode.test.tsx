@@ -94,7 +94,7 @@ describe('the inbox in live mode', () => {
     };
 
     expect(worklist.inbox.completes(task)).toBe(true);
-    expect(worklist.inbox.completes({ ...task, stream: 'REFILLS' })).toBe(false);
+    expect(worklist.inbox.completes({ ...task, stream: 'REFILLS' })).toBe(true);
     expect(worklist.inbox.claim).toBeNull();
     expect(worklist.inbox.reopen).toBeNull();
     await worklist.inbox.complete(task);

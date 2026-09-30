@@ -7,7 +7,15 @@
  * `docs/emr-capabilities.md` for the distinction and what it applies to.
  */
 
-export { generateCcd, parseCcd, parseDocumentTree } from './document.js';
+export { generateCcd, parseCcd, parseDocumentTree, previewCcd } from './document.js';
+export type {
+  CcdPreview,
+  CcdPreviewRejection,
+  CcdPreviewUnidentified,
+  CcdSectionName,
+  CcdSectionPreview,
+  CcdSectionStatus,
+} from './document.js';
 export { CcdaError } from './xml/errors.js';
 export { DEFAULT_XML_LIMITS, parseXml } from './xml/reader.js';
 export type { XmlLimits } from './xml/reader.js';

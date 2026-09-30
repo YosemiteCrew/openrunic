@@ -58,8 +58,10 @@ describe('resolving tools for a principal', () => {
       'chart.search',
       'denial.triage',
       'denial.draftAppeal',
+      'denial.prepareAppealFromCase',
       'authorisation.reviewEvidence',
       'priorauth.assemblePacket',
+      'priorauth.prepareFromCase',
       'coding.suggest',
     ]);
   });

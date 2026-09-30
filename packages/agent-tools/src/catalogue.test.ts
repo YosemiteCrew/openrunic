@@ -35,6 +35,12 @@ const EXPECTED: Readonly<Record<string, Expected>> = {
     approval: 'always',
     roles: ['biller'],
   },
+  'denial.prepareAppealFromCase': {
+    tier: 'DRAFT',
+    trustClass: 'writer',
+    approval: 'always',
+    roles: ['biller'],
+  },
   'referrals.reviewPreparation': {
     tier: 'READ',
     trustClass: 'reader',
@@ -58,6 +64,12 @@ const EXPECTED: Readonly<Record<string, Expected>> = {
     trustClass: 'writer',
     approval: 'always',
     roles: ['biller', 'clinician'],
+  },
+  'priorauth.prepareFromCase': {
+    tier: 'DRAFT',
+    trustClass: 'writer',
+    approval: 'always',
+    roles: ['biller'],
   },
   'forms.draftDefinition': {
     tier: 'DRAFT',
@@ -126,8 +138,10 @@ describe('the v1 catalogue', () => {
       'chart.search',
       'denial.triage',
       'denial.draftAppeal',
+      'denial.prepareAppealFromCase',
       'authorisation.reviewEvidence',
       'priorauth.assemblePacket',
+      'priorauth.prepareFromCase',
       'forms.draftDefinition',
       'inbox.classify',
       'audit.query',

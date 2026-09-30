@@ -38,8 +38,10 @@ export const TOOL_ALLOWLIST: ToolAllowlist = {
       'chart.search',
       'denial.triage',
       'denial.draftAppeal',
+      'denial.prepareAppealFromCase',
       'authorisation.reviewEvidence',
       'priorauth.assemblePacket',
+      'priorauth.prepareFromCase',
       'coding.suggest',
     ],
     'front-desk': [

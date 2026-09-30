@@ -124,6 +124,7 @@ export type {
 } from './tools/coding-suggest.js';
 export { denialDraftAppeal } from './tools/denial-draft-appeal.js';
 export { categorise, denialTriage } from './tools/denial-triage.js';
+export { denialPrepareAppealFromCase } from './tools/denial-prepare-appeal-from-case.js';
 export { authorisationReviewEvidence } from './tools/authorisation-review-evidence.js';
 export { documentsExtractCandidates } from './tools/documents-extract-candidates.js';
 export {
@@ -135,6 +136,7 @@ export { formsDraftDefinition } from './tools/forms-draft-definition.js';
 export { INBOX_CATEGORIES, inboxClassify } from './tools/inbox-classify.js';
 export { messagesDraftReply } from './tools/messages-draft-reply.js';
 export { PRIOR_AUTH_FIELDS, priorauthAssemblePacket } from './tools/priorauth-assemble-packet.js';
+export { priorauthPrepareFromCase } from './tools/priorauth-prepare-from-case.js';
 export { RECORD_PARTS, recordList } from './tools/record-list.js';
 export { encountersPrepareBrief, type EncounterBrief } from './tools/encounters-prepare-brief.js';
 export { createVisitsList, visitsList } from './tools/visits-list.js';

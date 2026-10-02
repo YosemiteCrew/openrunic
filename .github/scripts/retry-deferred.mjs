@@ -35,7 +35,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 /**
  * The held majors, and the gate that has to pass for each to be adoptable.
@@ -45,7 +46,7 @@ import { writeFileSync } from 'node:fs';
  * says "here is what would have to work". Deriving one from the other would
  * lose the second half, which is the half worth automating.
  */
-const DEFERRED = [
+export const DEFERRED = [
   {
     name: 'eslint',
     also: ['@eslint/js'],
@@ -81,6 +82,32 @@ const DEFERRED = [
     gate: ['run', 'type-check'],
   },
 ];
+
+/** The package names that the npm Dependabot configuration still holds. */
+export function ignoredDependencyNames(source) {
+  return new Set(
+    [...source.matchAll(/^\s*-\s+dependency-name:\s*(['"]?)([^'"\s#]+)\1\s*(?:#.*)?$/gm)].map(
+      (match) => match[2]
+    )
+  );
+}
+
+/**
+ * Keep the executable revisit plan beside this script, but take membership
+ * from Dependabot itself. Otherwise removing a hold leaves a stale test here,
+ * which can later report an already-adopted major as waiting to be adopted.
+ */
+export function activeDeferredEntries(entries, dependabotSource) {
+  const ignored = ignoredDependencyNames(dependabotSource);
+  const covered = new Set(entries.flatMap((entry) => [entry.name, ...entry.also]));
+  const missing = [...ignored].filter((name) => !covered.has(name));
+
+  if (missing.length > 0) {
+    throw new Error(`Deferred dependency has no revisit gate: ${missing.join(', ')}`);
+  }
+
+  return entries.filter((entry) => [entry.name, ...entry.also].some((name) => ignored.has(name)));
+}
 
 function run(command, args, options = {}) {
   return execFileSync(command, args, {
@@ -138,64 +165,72 @@ function attempt(entry) {
   }
 }
 
-const results = DEFERRED.map((entry) => attempt(entry));
+export function main() {
+  const dependabotSource = readFileSync('.github/dependabot.yml', 'utf8');
+  const deferred = activeDeferredEntries(DEFERRED, dependabotSource);
+  const results = deferred.map((entry) => attempt(entry));
 
-const adoptable = results.filter((r) => r.status === 'works');
-const lines = [
-  '## Deferred major upgrades',
-  '',
-  'Each of these is held in `.github/dependabot.yml` with a reason and a revisit',
-  'condition. This report evaluates those conditions by installing the newest',
-  'version and running the gate that failed, so a revisit condition is something',
-  'that gets answered rather than something that gets written down.',
-  '',
-  'A green row is evidence that an upgrade is worth attempting - not that it is',
-  'safe. Read the changelog of a major before taking it.',
-  '',
-  '| Package | Latest | Status | Held because |',
-  '| --- | --- | --- | --- |',
-  ...results.map(
-    (r) =>
-      `| \`${r.name}\` | ${r.latest ?? '?'} | ${
-        {
-          works: '**adoptable**',
-          blocked: 'still blocked',
-          'by-policy': 'held by policy',
-          unknown: 'unknown',
-        }[r.status]
-      } | ${r.reason} |`
-  ),
-  '',
-];
+  const adoptable = results.filter((r) => r.status === 'works');
+  const lines = [
+    '## Deferred major upgrades',
+    '',
+    'Each of these is held in `.github/dependabot.yml` with a reason and a revisit',
+    'condition. This report evaluates those conditions by installing the newest',
+    'version and running the gate that failed, so a revisit condition is something',
+    'that gets answered rather than something that gets written down.',
+    '',
+    'A green row is evidence that an upgrade is worth attempting - not that it is',
+    'safe. Read the changelog of a major before taking it.',
+    '',
+    '| Package | Latest | Status | Held because |',
+    '| --- | --- | --- | --- |',
+    ...results.map(
+      (r) =>
+        `| \`${r.name}\` | ${r.latest ?? '?'} | ${
+          {
+            works: '**adoptable**',
+            blocked: 'still blocked',
+            'by-policy': 'held by policy',
+            unknown: 'unknown',
+          }[r.status]
+        } | ${r.reason} |`
+    ),
+    '',
+  ];
 
-for (const blocked of results.filter((r) => r.status === 'blocked')) {
-  lines.push(
-    `<details><summary><code>${blocked.name}</code> still fails</summary>`,
-    '',
-    'Compare this against the reason recorded in `dependabot.yml`: the same failure',
-    'means the block still holds, a different one means the entry needs rewriting.',
-    '',
-    '```',
-    blocked.detail,
-    '```',
-    '',
-    '</details>',
-    ''
-  );
+  for (const blocked of results.filter((r) => r.status === 'blocked')) {
+    lines.push(
+      `<details><summary><code>${blocked.name}</code> still fails</summary>`,
+      '',
+      'Compare this against the reason recorded in `dependabot.yml`: the same failure',
+      'means the block still holds, a different one means the entry needs rewriting.',
+      '',
+      '```',
+      blocked.detail,
+      '```',
+      '',
+      '</details>',
+      ''
+    );
+  }
+
+  if (adoptable.length > 0) {
+    lines.push(
+      `**${String(adoptable.length)} upgrade${adoptable.length === 1 ? '' : 's'} now pass the gate that was blocking ${
+        adoptable.length === 1 ? 'it' : 'them'
+      }:** ${adoptable.map((r) => `\`${r.name}\``).join(', ')}. Remove the matching \`ignore\` entry to let Dependabot offer ${adoptable.length === 1 ? 'it' : 'them'} again.`,
+      ''
+    );
+  }
+
+  const report = lines.join('\n');
+  writeFileSync('deferred-report.md', report, 'utf8');
+  process.stdout.write(report);
 }
 
-if (adoptable.length > 0) {
-  lines.push(
-    `**${String(adoptable.length)} upgrade${adoptable.length === 1 ? '' : 's'} now pass the gate that was blocking ${
-      adoptable.length === 1 ? 'it' : 'them'
-    }:** ${adoptable.map((r) => `\`${r.name}\``).join(', ')}. Remove the matching \`ignore\` entry to let Dependabot offer ${adoptable.length === 1 ? 'it' : 'them'} again.`,
-    ''
-  );
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
 }
-
-const report = lines.join('\n');
-writeFileSync('deferred-report.md', report, 'utf8');
-process.stdout.write(report);
 
 // Always exit zero. A held upgrade that is still held is the expected outcome,
 // not a failure, and a red monthly job trains people to ignore it. The report

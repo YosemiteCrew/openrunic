@@ -58,6 +58,27 @@ const caseStatusSchema = z.enum([
   'cancelled',
 ]);
 
+const priorAuthorisationPreviewSchema = z.strictObject({
+  kind: z.literal('prior-authorisation'),
+  payer: codedValueSchema.nullable(),
+  memberId: z.string().nullable(),
+  serviceCode: codedValueSchema.nullable(),
+  diagnosisCodes: z.array(codedValueSchema),
+  requestedUnits: z.number().nullable(),
+  startDate: z.string().nullable(),
+  renderingProviderId: z.string().nullable(),
+  justification: z.string().nullable(),
+});
+
+const denialAppealPreviewSchema = z.strictObject({
+  kind: z.literal('denial-appeal'),
+  claimId: z.string(),
+  denialReasonCode: z.string().nullable(),
+  serviceDate: z.string().nullable(),
+  totalCents: z.number().nullable(),
+  narrative: z.string().nullable(),
+});
+
 const outputSchema = z.strictObject({
   caseId: z.uuid(),
   caseType: z.enum(['prior-authorisation', 'denied-claim']),
@@ -66,6 +87,11 @@ const outputSchema = z.strictObject({
   missingRequirements: z.array(missingRequirementSchema).max(64),
   /** Recorded status of the case. Never inferred from packet validity. */
   status: caseStatusSchema,
+  /** Read-only packet or appeal preview assembled from the selected case. */
+  preview: z.discriminatedUnion('kind', [
+    priorAuthorisationPreviewSchema,
+    denialAppealPreviewSchema,
+  ]),
   /** Source references for every satisfied requirement. */
   evidence: z
     .array(
@@ -117,9 +143,28 @@ export const authorisationReviewEvidence = defineTool({
   },
 });
 
-const formResponseSchema = z.object({ status: z.string().optional() }).passthrough();
+const formResponseSchema = z
+  .object({
+    status: z.string().optional(),
+    payer: codedValueSchema.optional(),
+    memberId: z.string().optional(),
+    serviceCode: codedValueSchema.optional(),
+    diagnosisCodes: z.array(codedValueSchema).optional(),
+    requestedUnits: z.number().optional(),
+    startDate: z.string().optional(),
+    renderingProviderId: z.string().optional(),
+    justification: z.string().optional(),
+  })
+  .passthrough();
 const claimResponseSchema = z
-  .object({ status: z.string().optional(), id: z.string().optional() })
+  .object({
+    status: z.string().optional(),
+    id: z.string().optional(),
+    denialReasonCode: z.string().optional(),
+    serviceDate: z.string().optional(),
+    totalCents: z.number().optional(),
+    narrative: z.string().optional(),
+  })
   .passthrough();
 const payerProfileResponseSchema = z.object({
   data: z.array(z.object({ fields: z.array(z.string()) })),
@@ -174,7 +219,7 @@ async function reviewCase(
   // Build the missing requirements checklist
   const missingRequirements = requiredFields.map((field) => {
     const value = caseData[field];
-    const satisfied = value !== undefined && value !== null && value !== '';
+    const satisfied = hasEvidence(value);
     return {
       label: fieldLabel(field),
       field,
@@ -192,9 +237,7 @@ async function reviewCase(
 
   // Collect evidence for satisfied requirements
   const evidence = requiredFields
-    .filter(
-      (field) => caseData[field] !== undefined && caseData[field] !== null && caseData[field] !== ''
-    )
+    .filter((field) => hasEvidence(caseData[field]))
     .map((field) => ({
       resourceType: caseRef.caseType === 'prior-authorisation' ? 'Form' : 'Claim',
       resourceId: caseRef.caseId,
@@ -204,6 +247,7 @@ async function reviewCase(
 
   // Determine recorded status (never inferred)
   const status = determineStatus(caseData, caseRef.caseType);
+  const preview = buildPreview(caseRef, caseData);
 
   return {
     caseId: caseRef.caseId,
@@ -211,7 +255,45 @@ async function reviewCase(
     payerProfile: caseRef.payerProfile,
     missingRequirements,
     status,
+    preview,
     evidence,
+  };
+}
+
+function hasEvidence(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+function buildPreview(
+  caseRef: { caseId: string; caseType: string },
+  caseData: Record<string, unknown>
+): z.infer<typeof priorAuthorisationPreviewSchema> | z.infer<typeof denialAppealPreviewSchema> {
+  if (caseRef.caseType === 'prior-authorisation') {
+    const form = formResponseSchema.parse(caseData);
+    return {
+      kind: 'prior-authorisation',
+      payer: form.payer ?? null,
+      memberId: form.memberId ?? null,
+      serviceCode: form.serviceCode ?? null,
+      diagnosisCodes: form.diagnosisCodes ?? [],
+      requestedUnits: form.requestedUnits ?? null,
+      startDate: form.startDate ?? null,
+      renderingProviderId: form.renderingProviderId ?? null,
+      justification: form.justification ?? null,
+    };
+  }
+
+  const claim = claimResponseSchema.parse(caseData);
+  return {
+    kind: 'denial-appeal',
+    claimId: caseRef.caseId,
+    denialReasonCode: claim.denialReasonCode ?? null,
+    serviceDate: claim.serviceDate ?? null,
+    totalCents: claim.totalCents ?? null,
+    narrative: claim.narrative ?? null,
   };
 }
 

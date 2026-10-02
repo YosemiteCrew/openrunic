@@ -51,6 +51,45 @@ const _outputSchema = z.strictObject({
         'payer-modified',
         'cancelled',
       ]),
+      preview: z.discriminatedUnion('kind', [
+        z.strictObject({
+          kind: z.literal('prior-authorisation'),
+          payer: z
+            .strictObject({
+              system: z.string(),
+              code: z.string(),
+              display: z.string().optional(),
+            })
+            .nullable(),
+          memberId: z.string().nullable(),
+          serviceCode: z
+            .strictObject({
+              system: z.string(),
+              code: z.string(),
+              display: z.string().optional(),
+            })
+            .nullable(),
+          diagnosisCodes: z.array(
+            z.strictObject({
+              system: z.string(),
+              code: z.string(),
+              display: z.string().optional(),
+            })
+          ),
+          requestedUnits: z.number().nullable(),
+          startDate: z.string().nullable(),
+          renderingProviderId: z.string().nullable(),
+          justification: z.string().nullable(),
+        }),
+        z.strictObject({
+          kind: z.literal('denial-appeal'),
+          claimId: z.string(),
+          denialReasonCode: z.string().nullable(),
+          serviceDate: z.string().nullable(),
+          totalCents: z.number().nullable(),
+          narrative: z.string().nullable(),
+        }),
+      ]),
       evidence: z.array(
         z.strictObject({
           resourceType: z.string(),
@@ -127,6 +166,17 @@ describe('authorisation.reviewEvidence', () => {
     // All fields should be satisfied in this case
     expect(review.missingRequirements.every((r) => r.satisfied)).toBe(true);
     expect(review.evidence).toHaveLength(8);
+    expect(review.preview).toEqual({
+      kind: 'prior-authorisation',
+      payer: { system: 'test-payer-system', code: 'test-payer-1', display: 'Test Payer' },
+      memberId: 'test-member-1',
+      serviceCode: { system: 'test-code-system', code: 'test-code-1' },
+      diagnosisCodes: [{ system: 'test-diagnosis-system', code: 'test-diag-1' }],
+      requestedUnits: 1,
+      startDate: '2026-01-15',
+      renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',
+      justification: 'test-justification',
+    });
   });
 
   it('reports missing requirements when fields are absent', async () => {
@@ -181,7 +231,14 @@ describe('authorisation.reviewEvidence', () => {
     const missing = review.missingRequirements.filter((r) => !r.satisfied);
     expect(missing.length).toBeGreaterThan(0);
     expect(missing.some((r) => r.field === 'serviceCode')).toBe(true);
+    expect(missing.some((r) => r.field === 'diagnosisCodes')).toBe(true);
     expect(missing.some((r) => r.field === 'justification')).toBe(true);
+    expect(review.preview).toMatchObject({
+      kind: 'prior-authorisation',
+      serviceCode: null,
+      diagnosisCodes: [],
+      justification: null,
+    });
   });
 
   it('rejects the review when the payer profile is not found', async () => {
@@ -215,6 +272,7 @@ describe('authorisation.reviewEvidence', () => {
         denialReasonCode: 'test-denial-1',
         serviceDate: '2026-01-10',
         totalCents: 15000,
+        narrative: 'The record supports reconsideration of the denied service.',
       })
       .mockResolvedValueOnce({
         data: [{ fields: ['denialReasonCode', 'serviceDate', 'totalCents'] }],
@@ -242,6 +300,14 @@ describe('authorisation.reviewEvidence', () => {
     expect(review.caseType).toBe('denied-claim');
     expect(review.status).toBe('payer-denied');
     expect(review.missingRequirements).toHaveLength(3);
+    expect(review.preview).toEqual({
+      kind: 'denial-appeal',
+      claimId: '123e4567-e89b-12d3-a456-426614174001',
+      denialReasonCode: 'test-denial-1',
+      serviceDate: '2026-01-10',
+      totalCents: 15000,
+      narrative: 'The record supports reconsideration of the denied service.',
+    });
   });
 
   it('handles multiple cases in one call', async () => {
@@ -500,7 +566,7 @@ describe('authorisation.reviewEvidence', () => {
         payer: { system: 'p', code: 'p1' },
         memberId: 'M1',
         serviceCode: { system: 'c', code: '1' },
-        diagnosisCodes: [],
+        diagnosisCodes: [{ system: 'd', code: 'D1' }],
         requestedUnits: 1,
         startDate: '2026-01-01',
         renderingProviderId: '123e4567-e89b-12d3-a456-426614174000',

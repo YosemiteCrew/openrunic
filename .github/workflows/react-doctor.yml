@@ -62,8 +62,24 @@ jobs:
 
       # `-y` skips the interactive project picker, which would otherwise hang a
       # runner forever waiting for a keystroke nobody is there to press.
+      # The score comes from a remote service. A missing score is retried once
+      # after a short pause; if it is still missing, the next step fails the job.
+      # The scan's own exit status (blocking diagnostics) is always kept.
       - name: Run react-doctor
-        run: pnpm exec react-doctor -y --json --json-out react-doctor.json
+        run: |
+          set +e -uo pipefail
+          status=0
+          for attempt in 1 2; do
+            rm -f react-doctor.json
+            pnpm exec react-doctor -y --json --json-out react-doctor.json
+            status=$?
+            if node -e 'const r = JSON.parse(require("node:fs").readFileSync("react-doctor.json", "utf8")); process.exit(typeof r.summary?.score === "number" ? 0 : 1);'; then
+              exit "$status"
+            fi
+            echo "::warning::react-doctor returned no score on attempt ${attempt}."
+            if [ "$attempt" -eq 1 ]; then sleep 30; fi
+          done
+          exit "$status"
 
       - name: Enforce the score floor
         env:
@@ -95,25 +111,43 @@ jobs:
               process.exit(1);
             }
 
-            for (const project of report.projects ?? []) {
-              const name = project.project?.projectName ?? project.directory;
-              console.log(`  ${name}: ${project.score?.score ?? "n/a"}`);
-            }
-            console.log(`overall: ${score} (${scoreLabel}), ${errorCount} errors, ${warningCount} warnings`);
-
-            if (score < minimum) {
-              // Name the rules, so the failure is actionable from the log alone
-              // rather than only from the artifact.
-              for (const project of report.projects ?? []) {
-                for (const rule of Object.keys(project.score?.rules ?? {})) {
-                  console.error(`::error::${rule} is costing score in ${project.project?.projectName ?? project.directory}`);
-                }
-              }
-              console.error(`::error::React Doctor score ${score} is below the ${minimum} floor.`);
+            // Every app is held to the floor on its own: an overall figure can
+            // average a weak app up past the floor, so it is not enough alone.
+            const projects = report.projects ?? [];
+            if (projects.length === 0) {
+              console.error("::error::react-doctor scanned no projects. Refusing to pass on an empty report.");
               process.exit(1);
             }
 
-            console.log(`React Doctor score ${score} meets the ${minimum} floor.`);
+            const failing = [];
+            for (const project of projects) {
+              const name = project.project?.projectName ?? project.directory;
+              const projectScore = project.score?.score;
+              console.log(`  ${name}: ${projectScore ?? "n/a"}`);
+              if (typeof projectScore !== "number") {
+                console.error(`::error::react-doctor returned no score for ${name}.`);
+                failing.push(project);
+              } else if (projectScore < minimum) {
+                failing.push(project);
+              }
+            }
+            console.log(`overall: ${score} (${scoreLabel}), ${errorCount} errors, ${warningCount} warnings`);
+
+            if (score < minimum || failing.length > 0) {
+              // Name the rules, so the failure is actionable from the log alone
+              // rather than only from the artifact.
+              for (const project of failing.length > 0 ? failing : projects) {
+                const name = project.project?.projectName ?? project.directory;
+                for (const rule of Object.keys(project.score?.rules ?? {})) {
+                  console.error(`::error::${rule} is costing score in ${name}`);
+                }
+                console.error(`::error::${name} scored ${project.score?.score ?? "nothing"}, below the ${minimum} floor.`);
+              }
+              console.error(`::error::React Doctor did not clear the ${minimum} floor (overall ${score}).`);
+              process.exit(1);
+            }
+
+            console.log(`React Doctor score ${score} and every app meet the ${minimum} floor.`);
           '
 
       - name: Upload the report

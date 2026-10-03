@@ -282,7 +282,9 @@ export function registryRoutes(router: Hono<AppEnv>): void {
  * Doses with no report stamp, oldest first.
  *
  * Oldest first because a registry submission that has been failing for a month
- * should surface the month-old dose, not the one given this morning.
+ * should surface the month-old dose, not the one given this morning. The stamp
+ * is filtered in the query rather than on the page it returns, so the limit
+ * counts outstanding doses and a full page of reported ones cannot hide them.
  */
 async function pendingDoses(
   c: Context<AppEnv>,
@@ -295,11 +297,12 @@ async function pendingDoses(
     pageSize: limit,
     sort: 'administeredAt',
     order: 'asc',
+    reported: false,
     ...(from === undefined ? {} : { from }),
     ...(to === undefined ? {} : { to }),
   });
 
-  return page.rows.filter((row) => row.reportedToRegistryAt === null);
+  return page.rows;
 }
 
 function headerFrom(

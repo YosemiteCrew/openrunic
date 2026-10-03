@@ -3,7 +3,7 @@
   "version": "0.4.0",
   "private": true,
   "type": "module",
-  "description": "openrunic API — the FHIR R4 boundary of the EMR",
+  "description": "openrunic API \u2014 the FHIR R4 boundary of the EMR",
   "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -30,7 +30,7 @@
     "@openrunic/inventory": "workspace:*",
     "@openrunic/quality": "workspace:*",
     "@openrunic/terminology": "workspace:*",
-    "hono": "^4.13.7",
+    "hono": "^4.13.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -11,6 +11,10 @@ rules.
 
 - **Floor: 95.** Set in `MINIMUM_SCORE` in `.github/workflows/react-doctor.yml`. Raise it as the
   codebase improves; never lower it to land a change.
+- **Every app clears the floor on its own.** The overall score and each scanned project's score
+  must be at least the floor, so one strong app cannot carry a weak one.
+- **A missing score fails.** The scan is retried once when the scoring service returns nothing; a
+  second miss fails the check rather than skipping it.
 - Run it yourself with `pnpm run doctor`, or `pnpm run doctor:json` to write the full report.
 - Scope exclusions live in `doctor.config.json`: build output, coverage and generated Prisma code.
 

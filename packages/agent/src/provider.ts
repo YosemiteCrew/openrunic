@@ -1,9 +1,14 @@
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-
 import { trimTrailingSlashes } from '@openrunic/agent-tools';
 import type { AgentModelConfig } from './config.js';
 import type { ExplicitLanguageModel } from './model-profile.js';
+import {
+  registerProvider,
+  resolveProviderFromRegistry,
+  builtInProviders,
+  type ProviderFactory,
+  type ProviderFactoryConfig,
+  type ProviderFactoryOptions,
+} from './provider-registry.js';
 
 /**
  * Provider resolution, and the one trap this package exists to avoid.
@@ -42,6 +47,15 @@ export interface ResolveProviderOptions {
   headers?: Record<string, string>;
 }
 
+/** Re-export the registry for custom provider registration. */
+export {
+  registerProvider,
+  builtInProviders,
+  type ProviderFactory,
+  type ProviderFactoryConfig,
+  type ProviderFactoryOptions,
+} from './provider-registry.js';
+
 export function resolveProvider(
   config: AgentModelConfig,
   options: ResolveProviderOptions = {}
@@ -51,23 +65,20 @@ export function resolveProvider(
     throw new Error('resolveProvider: a base URL is required. There is no default endpoint.');
   }
 
-  const model =
-    config.providerKind === 'anthropic'
-      ? createAnthropic({
-          baseURL: baseUrl,
-          apiKey: config.apiKey ?? '',
-          ...(options.headers === undefined ? {} : { headers: options.headers }),
-          ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-        })(config.modelId)
-      : createOpenAICompatible({
-          // Names the endpoint as the deployer's, not as a vendor's, in every
-          // error message the SDK produces.
-          name: 'openrunic-deployer-endpoint',
-          baseURL: baseUrl,
-          ...(config.apiKey === undefined ? {} : { apiKey: config.apiKey }),
-          ...(options.headers === undefined ? {} : { headers: options.headers }),
-          ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-        }).chatModel(config.modelId);
+  const model = resolveProviderFromRegistry(
+    {
+      providerKind: config.providerKind,
+      baseUrl,
+      modelId: config.modelId,
+      apiKey: config.apiKey,
+      phiEgress: config.phiEgress,
+      egressAcknowledgement: config.egressAcknowledgement,
+    },
+    {
+      fetch: options.fetch,
+      headers: options.headers,
+    }
+  );
 
   return { model: assertExplicitModel(model), baseUrl, modelId: config.modelId };
 }

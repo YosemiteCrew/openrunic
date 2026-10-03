@@ -124,6 +124,13 @@ export {
 
 export { assertExplicitModel, resolveProvider } from './provider.js';
 export type { ProviderFetch, ResolveProviderOptions, ResolvedProvider } from './provider.js';
+export {
+  registerProvider,
+  builtInProviders,
+  type ProviderFactory,
+  type ProviderFactoryConfig,
+  type ProviderFactoryOptions,
+} from './provider-registry.js';
 
 export { agentIdentity, createAgentRuntime } from './runtime.js';
 export type { AgentIdentity, AgentRuntime, CreateAgentRuntimeOptions } from './runtime.js';

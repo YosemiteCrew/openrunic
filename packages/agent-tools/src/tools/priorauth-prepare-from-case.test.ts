@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { priorauthPrepareFromCase } from './priorauth-prepare-from-case.js';
 import { stubPrincipal } from '../testing/index.js';
+import type { ProposalResult } from '../proposal.js';
 
 const PRINCIPAL = stubPrincipal({
   roleIds: ['biller'],
@@ -58,10 +59,10 @@ describe('priorauth.prepareFromCase', () => {
         ],
       });
 
-    const result = await priorauthPrepareFromCase.run(
+    const result = (await priorauthPrepareFromCase.run(
       { formId: FORM_ID, payerProfile: PAYER_PROFILE },
       { principal: PRINCIPAL, credential: CREDENTIAL, api: API_CLIENT }
-    );
+    )) as ProposalResult;
 
     expect(result.status).toBe('pending');
     expect(result.proposal.kind).toBe('form.priorAuthorisation');
@@ -114,10 +115,10 @@ describe('priorauth.prepareFromCase', () => {
         ],
       });
 
-    const result = await priorauthPrepareFromCase.run(
+    const result = (await priorauthPrepareFromCase.run(
       { formId: FORM_ID, payerProfile: PAYER_PROFILE },
       { principal: PRINCIPAL, credential: CREDENTIAL, api: API_CLIENT }
-    );
+    )) as ProposalResult;
 
     expect(result.status).toBe('pending');
     const body = result.proposal.commit.body;
@@ -183,10 +184,10 @@ describe('priorauth.prepareFromCase', () => {
           ],
         });
 
-      const result = await priorauthPrepareFromCase.run(
+      const result = (await priorauthPrepareFromCase.run(
         { formId: FORM_ID, payerProfile: { system: 'test', code: 'test-code' } },
         { principal: PRINCIPAL, credential: CREDENTIAL, api: API_CLIENT }
-      );
+      )) as ProposalResult;
 
       expect(result.status).toBe('pending');
       // The body status should match the form status
@@ -224,10 +225,10 @@ describe('priorauth.prepareFromCase', () => {
         ],
       });
 
-    const result = await priorauthPrepareFromCase.run(
+    const result = (await priorauthPrepareFromCase.run(
       { formId: FORM_ID, payerProfile: PAYER_PROFILE },
       { principal: PRINCIPAL, credential: CREDENTIAL, api: API_CLIENT }
-    );
+    )) as ProposalResult;
 
     expect(result.proposal.effect).toContainEqual({ label: 'Payer', value: 'test-payer-1' });
   });

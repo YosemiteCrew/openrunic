@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { denialPrepareAppealFromCase } from './denial-prepare-appeal-from-case.js';
 import { stubPrincipal } from '../testing/index.js';
+import type { ProposalResult } from '../proposal.js';
 
 const PRINCIPAL = stubPrincipal({
   roleIds: ['biller'],
@@ -47,10 +48,10 @@ describe('denial.prepareAppealFromCase', () => {
         ],
       });
 
-    const result = await denialPrepareAppealFromCase.run(
+    const result = (await denialPrepareAppealFromCase.run(
       { claimId: CLAIM_ID, denialReasonCode: DENIAL_REASON, payerProfile: PAYER_PROFILE },
       { principal: PRINCIPAL, credential: CREDENTIAL, api: API_CLIENT }
-    );
+    )) as ProposalResult;
 
     expect(result.status).toBe('pending');
     expect(result.proposal.kind).toBe('claim.appeal');
@@ -87,10 +88,10 @@ describe('denial.prepareAppealFromCase', () => {
         ],
       });
 
-    const result = await denialPrepareAppealFromCase.run(
+    const result = (await denialPrepareAppealFromCase.run(
       { claimId: CLAIM_ID, denialReasonCode: DENIAL_REASON, payerProfile: PAYER_PROFILE },
       { principal: PRINCIPAL, credential: CREDENTIAL, api: API_CLIENT }
-    );
+    )) as ProposalResult;
 
     expect(result.status).toBe('pending');
     const body = result.proposal.commit.body;
@@ -139,10 +140,10 @@ describe('denial.prepareAppealFromCase', () => {
           data: [{ fields: ['denialReasonCode', 'serviceDate', 'totalCents', 'narrative'] }],
         });
 
-      const result = await denialPrepareAppealFromCase.run(
+      const result = (await denialPrepareAppealFromCase.run(
         { claimId: CLAIM_ID, denialReasonCode: DENIAL_REASON, payerProfile: PAYER_PROFILE },
         { principal: PRINCIPAL, credential: CREDENTIAL, api: API_CLIENT }
-      );
+      )) as ProposalResult;
 
       expect(result.status).toBe('pending');
       // The body status is always 'draft' for a new appeal

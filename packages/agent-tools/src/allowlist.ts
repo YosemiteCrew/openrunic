@@ -32,13 +32,16 @@ export const TOOL_ALLOWLIST: ToolAllowlist = {
       'documents.extractCandidates',
       'messages.draftReply',
       'referrals.reviewPreparation',
+      'encounters.prepareBrief',
     ],
     biller: [
       'chart.search',
       'denial.triage',
       'denial.draftAppeal',
+      'denial.prepareAppealFromCase',
       'authorisation.reviewEvidence',
       'priorauth.assemblePacket',
+      'priorauth.prepareFromCase',
       'coding.suggest',
     ],
     'front-desk': [

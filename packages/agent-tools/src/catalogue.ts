@@ -6,6 +6,7 @@ import { billsList } from './tools/bills-list.js';
 import { chartSearch } from './tools/chart-search.js';
 import { codingSuggest } from './tools/coding-suggest.js';
 import { denialDraftAppeal } from './tools/denial-draft-appeal.js';
+import { denialPrepareAppealFromCase } from './tools/denial-prepare-appeal-from-case.js';
 import { denialTriage } from './tools/denial-triage.js';
 import { authorisationReviewEvidence } from './tools/authorisation-review-evidence.js';
 import { documentsExtractCandidates } from './tools/documents-extract-candidates.js';
@@ -13,8 +14,10 @@ import { formsDraftDefinition } from './tools/forms-draft-definition.js';
 import { inboxClassify } from './tools/inbox-classify.js';
 import { messagesDraftReply } from './tools/messages-draft-reply.js';
 import { priorauthAssemblePacket } from './tools/priorauth-assemble-packet.js';
+import { priorauthPrepareFromCase } from './tools/priorauth-prepare-from-case.js';
 import { recordList } from './tools/record-list.js';
 import { referralsReviewPreparation } from './tools/referrals-review-preparation.js';
+import { encountersPrepareBrief } from './tools/encounters-prepare-brief.js';
 import { visitsList } from './tools/visits-list.js';
 
 /**
@@ -34,8 +37,10 @@ export const V1_TOOLS: readonly AgentTool[] = [
   chartSearch,
   denialTriage,
   denialDraftAppeal,
+  denialPrepareAppealFromCase,
   authorisationReviewEvidence,
   priorauthAssemblePacket,
+  priorauthPrepareFromCase,
   formsDraftDefinition,
   inboxClassify,
   auditQuery,
@@ -44,6 +49,7 @@ export const V1_TOOLS: readonly AgentTool[] = [
   documentsExtractCandidates,
   messagesDraftReply,
   referralsReviewPreparation,
+  encountersPrepareBrief,
   codingSuggest,
 ];
 

@@ -45,6 +45,7 @@ describe('resolving tools for a principal', () => {
       'appointments.propose',
       'documents.extractCandidates',
       'messages.draftReply',
+      'encounters.prepareBrief',
     ]);
   });
 
@@ -57,8 +58,10 @@ describe('resolving tools for a principal', () => {
       'chart.search',
       'denial.triage',
       'denial.draftAppeal',
+      'denial.prepareAppealFromCase',
       'authorisation.reviewEvidence',
       'priorauth.assemblePacket',
+      'priorauth.prepareFromCase',
       'coding.suggest',
     ]);
   });
@@ -151,6 +154,7 @@ describe('the reader/writer split at resolve time', () => {
       'chart.search',
       'authorisation.reviewEvidence',
       'appointments.findSlots',
+      'encounters.prepareBrief',
     ]);
     expect(readerTools.every((tool) => tool.sideEffect === 'read')).toBe(true);
   });

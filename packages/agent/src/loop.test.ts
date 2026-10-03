@@ -193,6 +193,7 @@ describe('the reader holds no write tool', () => {
       'chart.search',
       'authorisation.reviewEvidence',
       'appointments.findSlots',
+      'encounters.prepareBrief',
     ]);
     expect(advertised).not.toContain('appointments.propose');
   });

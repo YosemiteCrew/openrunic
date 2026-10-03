@@ -84,7 +84,13 @@ export const denialPrepareAppealFromCase = defineTool({
         { toolId: 'denial.prepareAppealFromCase' }
       );
     }
-    const requiredFields = payerProfile.fields;
+    const claimRecord = claimData as Record<string, unknown>;
+    const isPresent = (field: string): boolean => {
+      const value = claimRecord[field];
+      return value !== undefined && value !== null && value !== '';
+    };
+    const satisfied = payerProfile.fields.filter(isPresent);
+    const missing = payerProfile.fields.filter((field) => !isPresent(field));
 
     // Build the preview body
     const body: JsonObject = {
@@ -93,7 +99,7 @@ export const denialPrepareAppealFromCase = defineTool({
       denialReasonCode: input.denialReasonCode,
       status: 'draft',
       narrative: (claimData.narrative as string) ?? '',
-      citations: [],
+      citations: satisfied.map((field) => ({ field, reference: `Claim/${input.claimId}` })),
     };
 
     return pending({
@@ -101,7 +107,11 @@ export const denialPrepareAppealFromCase = defineTool({
       effect: [
         { label: 'Claim', value: input.claimId },
         { label: 'Denial reason', value: input.denialReasonCode },
-        { label: 'Cited rows', value: String(requiredFields.length) },
+        {
+          label: 'Requirements met',
+          value: `${satisfied.length} of ${payerProfile.fields.length}`,
+        },
+        { label: 'Missing', value: missing.length > 0 ? missing.join(', ') : '—' },
       ],
       affects: [{ type: 'Claim', id: input.claimId }],
       commit: {

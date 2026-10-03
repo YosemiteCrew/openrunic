@@ -64,7 +64,9 @@ describe('denial.prepareAppealFromCase', () => {
     expect(result.proposal.commit.body.narrative).toBe('Appeal narrative here.');
     expect(result.proposal.effect).toContainEqual({ label: 'Claim', value: CLAIM_ID });
     expect(result.proposal.effect).toContainEqual({ label: 'Denial reason', value: DENIAL_REASON });
-    expect(result.proposal.effect).toContainEqual({ label: 'Cited rows', value: '4' });
+    expect(result.proposal.effect).toContainEqual({ label: 'Requirements met', value: '4 of 4' });
+    expect(result.proposal.effect).toContainEqual({ label: 'Missing', value: '—' });
+    expect(result.proposal.commit.body.citations).toHaveLength(4);
     expect(result.proposal.affects).toEqual([{ type: 'Claim', id: CLAIM_ID }]);
     expect(result.proposal.derivedFromUntrusted).toBe(false);
   });
@@ -98,7 +100,15 @@ describe('denial.prepareAppealFromCase', () => {
     expect(body.claimId).toBe(CLAIM_ID);
     expect(body.denialReasonCode).toBe(DENIAL_REASON);
     expect(body.narrative).toBe('');
-    // The commit still goes through - the human reviews the preview
+    expect(result.proposal.effect).toContainEqual({ label: 'Requirements met', value: '2 of 4' });
+    expect(result.proposal.effect).toContainEqual({
+      label: 'Missing',
+      value: 'denialReasonCode, narrative',
+    });
+    expect(body.citations).toEqual([
+      { field: 'serviceDate', reference: `Claim/${CLAIM_ID}` },
+      { field: 'totalCents', reference: `Claim/${CLAIM_ID}` },
+    ]);
   });
 
   it('rejects the preparation when the payer profile is not found', async () => {
